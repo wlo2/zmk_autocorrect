@@ -1,0 +1,5 @@
+
+name: zmk-feature-autocorrect
+build:
+  cmake: .
+  kconfig: Kconfig

@@ -1,0 +1,7 @@
+
+config ZMK_AUTOCORRECT
+  bool "Autocorrect"
+  default n
+  help
+    Enable the autocorrect feature.
+

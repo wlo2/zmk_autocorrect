@@ -1,0 +1,4 @@
+
+czephyr_library_register(zmk_feature_autocorrect)
+czephyr_library_sources(src/autocorrect.c)
+czephyr_library_include_dirs(include)
