@@ -129,13 +129,13 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         // Set a word boundary if space, period, digit, etc. is pressed.
         keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR);
         break;
-    case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_ENTER):
+    case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_RETURN_ENTER):
         // Behave more conservatively for the enter key. Reset, so that enter
         // can't be used on a word ending.
         typo_buffer_size = 0;
         keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR);
         break;
-    case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_BACKSPACE):
+    case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE):
         // Remove last character from the buffer.
         if (typo_buffer_size > 0) {
             --typo_buffer_size;
@@ -226,7 +226,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
 
             if (apply_autocorrect(backspaces, changes, typo, correct)) {
                 for (uint8_t i = 0; i < backspaces; ++i) {
-                    tap_code(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_BACKSPACE));
+                    tap_code(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
                 }
                 send_string(changes);
             }
