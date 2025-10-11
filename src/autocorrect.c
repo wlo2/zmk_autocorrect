@@ -188,7 +188,15 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     uint16_t state = 0;
     uint8_t code = autocorrect_data[state];
     for (int8_t i = typo_buffer_size - 1; i >= 0; --i) {
-        uint8_t const key_i = typo_buffer[i];
+        uint8_t key_i = typo_buffer[i];
+        
+        // Convert HID keycode to character offset for trie matching
+        if (key_i >= ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_A) && 
+            key_i <= ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_Z)) {
+            key_i = key_i - ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_A);
+        } else if (key_i == ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR)) {
+            key_i = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR);
+        }
 
         if (code & 64) { // Check for match in node with multiple children.
             code &= 63;
