@@ -21,7 +21,13 @@ This module adds an autocorrect feature to ZMK, similar to the one found in QMK.
     CONFIG_ZMK_AUTOCORRECT=y
     ```
 
-3.  **Add the keycodes to your keymap.**
+3.  **Include the behaviors in your keymap file.**
+    Add the following line at the top of your keymap file (after the includes):
+    ```
+    #include <behaviors/autocorrect.dtsi>
+    ```
+
+4.  **Add the keycodes to your keymap.**
     The following keycodes are available to control the autocorrect feature:
     - `&ac_on`: Enables autocorrect.
     - `&ac_off`: Disables autocorrect.

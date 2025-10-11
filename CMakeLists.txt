@@ -1,4 +1,8 @@
 
 czephyr_library_register(zmk_feature_autocorrect)
 czephyr_library_sources(src/autocorrect.c)
+czephyr_library_sources(src/behaviors/behavior_autocorrect_on.c)
+czephyr_library_sources(src/behaviors/behavior_autocorrect_off.c)
+czephyr_library_sources(src/behaviors/behavior_autocorrect_toggle.c)
 czephyr_library_include_dirs(include)
+czephyr_library_include_dirs(dts)
