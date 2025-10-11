@@ -39,7 +39,7 @@ bool autocorrect_is_enabled(void) {
     if (rc > 0) { // item was found
         return enabled == 1;
     }
-    return false; // default to disabled
+    return true; // default to enabled
 }
 
 void autocorrect_enable(void) {
