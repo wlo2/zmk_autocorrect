@@ -9,6 +9,7 @@
 #include <zmk/keys.h>
 #include <zephyr/storage/flash_map.h>
 #include <dt-bindings/zmk/modifiers.h>
+#include <dt-bindings/zmk/hid_usage.h>
 
 #if __has_include("autocorrect_data.h")
 #    include "autocorrect_data.h"
@@ -141,7 +142,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         return ZMK_EV_EVENT_BUBBLE;
     case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_APOSTROPHE_AND_QUOTE):
         // Treat " (shifted ') as a word boundary.
-        if ((zmk_hid_get_explicit_mods() & MOD_MASK_SHIFT) != 0) {
+        if ((zmk_hid_get_explicit_mods() & (MOD_LSFT | MOD_RSFT)) != 0) {
             keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR);
         }
         break;
