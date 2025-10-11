@@ -23,7 +23,7 @@ static uint8_t typo_buffer[AUTOCORRECT_MAX_LENGTH] = {0};
 static uint8_t typo_buffer_size = 0;
 
 // Initialize NVS
-static int autocorrect_init(const struct device *dev) {
+static int autocorrect_init(void) {
         int rc;
 #if FIXED_PARTITION_EXISTS(storage)
     fs.offset = FLASH_AREA_OFFSET(storage);
@@ -95,7 +95,7 @@ bool process_autocorrect_user(struct zmk_keycode_state_changed *ev) {
 static int autocorrect_event_listener(const zmk_event_t *eh) {
     struct zmk_keycode_state_changed *ev = as_zmk_keycode_state_changed(eh);
 
-    if (ev == NULL || !ev->pressed) {
+    if (ev == NULL || !ev->state) {
         return ZMK_EV_EVENT_BUBBLE;
     }
 
@@ -193,7 +193,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         code = autocorrect_data[state];
 
         if (code & 128) { // A typo was found! Apply autocorrect.
-            const uint8_t backspaces = (code & 63) + ev->pressed;
+            const uint8_t backspaces = (code & 63) + ev->state;
             const char *changes = (const char *)(autocorrect_data + state + 1);
 
             char typo[AUTOCORRECT_MAX_LENGTH + 1] = {0};
