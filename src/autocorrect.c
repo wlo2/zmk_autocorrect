@@ -7,6 +7,7 @@
 #include <zmk/hid.h>
 #include <zmk/usb_hid.h>
 #include <zmk/keys.h>
+#include <zephyr/storage/flash_map.h>
 
 #if __has_include("autocorrect_data.h")
 #    include "autocorrect_data.h"
@@ -23,8 +24,8 @@ static uint8_t typo_buffer_size = 0;
 
 // Initialize NVS
 static int autocorrect_init(const struct device *dev) {
-    fs.offset = FLASH_AREA_OFFSET(storage);
-    int rc = nvs_init(&fs, FLASH_AREA_ID(storage));
+    fs.offset = FLASH_AREA_OFFSET(storage_partition);
+    int rc = nvs_init(&fs, FLASH_AREA_ID(storage_partition));
     if (rc) {
         return rc;
     }
