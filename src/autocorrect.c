@@ -8,6 +8,7 @@
 #include <zmk/usb_hid.h>
 #include <zmk/keys.h>
 #include <zephyr/storage/flash_map.h>
+#include <dt-bindings/zmk/modifiers.h>
 
 #if __has_include("autocorrect_data.h")
 #    include "autocorrect_data.h"
@@ -111,7 +112,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     uint16_t keycode = ev->keycode;
 
     // Disable autocorrect while a mod other than shift is active.
-    if ((zmk_hid_get_explicit_mods() & ~MOD_MASK_SHIFT) != 0) {
+    if ((zmk_hid_get_explicit_mods() & ~(MOD_LSFT | MOD_RSFT)) != 0) {
         typo_buffer_size = 0;
         return ZMK_EV_EVENT_BUBBLE;
     }
