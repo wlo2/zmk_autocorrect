@@ -79,9 +79,27 @@ static void tap_code(uint16_t keycode) {
 
 static void send_string(const char *str) {
     for (int i = 0; str[i] != '\0'; i++) {
-        // This is a simplification. A real implementation would need to handle
-        // shifted characters and other symbols.
-        tap_code(str[i]);
+        char c = str[i];
+        uint16_t keycode;
+        
+        if (c >= 'a' && c <= 'z') {
+            keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_A + (c - 'a'));
+        } else if (c >= 'A' && c <= 'Z') {
+            // Handle uppercase letters with shift
+            keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_A + (c - 'A'));
+            zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFT_SHIFT));
+            zmk_usb_hid_send_keyboard_report();
+            tap_code(keycode);
+            zmk_hid_keyboard_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFT_SHIFT));
+            zmk_usb_hid_send_keyboard_report();
+            continue;
+        } else {
+            // For now, skip non-alphabetic characters
+            // A full implementation would handle numbers, symbols, etc.
+            continue;
+        }
+        
+        tap_code(keycode);
     }
 }
 
@@ -196,7 +214,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         code = autocorrect_data[state];
 
         if (code & 128) { // A typo was found! Apply autocorrect.
-            const uint8_t backspaces = (code & 63) + ev->state;
+            const uint8_t backspaces = (code & 63);
             const char *changes = (const char *)(autocorrect_data + state + 1);
 
             char typo[AUTOCORRECT_MAX_LENGTH + 1] = {0};
