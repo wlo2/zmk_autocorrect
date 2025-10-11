@@ -10,6 +10,7 @@
 #include <zephyr/storage/flash_map.h>
 #include <dt-bindings/zmk/modifiers.h>
 #include <dt-bindings/zmk/hid_usage.h>
+#include <dt-bindings/zmk/hid_usage_pages.h>
 
 #if __has_include("autocorrect_data.h")
 #    include "autocorrect_data.h"
