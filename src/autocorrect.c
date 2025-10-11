@@ -24,8 +24,13 @@ static uint8_t typo_buffer_size = 0;
 
 // Initialize NVS
 static int autocorrect_init(const struct device *dev) {
-    fs.offset = FLASH_AREA_OFFSET(storage_partition);
-    int rc = nvs_init(&fs, FLASH_AREA_ID(storage_partition));
+    #if FIXED_PARTITION_EXISTS(storage)
+    fs.offset = FLASH_AREA_OFFSET(storage);
+    rc = nvs_init(&fs, FLASH_AREA_ID(storage));
+#else
+    fs.offset = 0;
+    rc = -1;
+#endif
     if (rc) {
         return rc;
     }
