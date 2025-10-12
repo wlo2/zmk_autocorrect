@@ -27,39 +27,49 @@ static uint8_t typo_buffer_size = 1;
 
 // Initialize NVS
 static int autocorrect_init(void) {
-        int rc;
+    int rc = 0;
 #if FIXED_PARTITION_EXISTS(storage)
     fs.offset = FLASH_AREA_OFFSET(storage);
-    rc = nvs_init(&fs, FLASH_AREA_ID(storage));
-#else
-    fs.offset = 0;
-    rc = -1;
-#endif
+    fs.sector_size = 4096;
+    fs.sector_count = 3;
+    rc = nvs_mount(&fs);
     if (rc) {
         return rc;
     }
+#endif
     return 0;
 }
 
 SYS_INIT(autocorrect_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
 
+static bool autocorrect_enabled = true; // Default state
+
 bool autocorrect_is_enabled(void) {
+#if FIXED_PARTITION_EXISTS(storage)
     uint8_t enabled;
     int rc = nvs_read(&fs, AUTOCORRECT_ENABLE_ID, &enabled, sizeof(enabled));
     if (rc > 0) { // item was found
-        return enabled == 1;
+        autocorrect_enabled = (enabled == 1);
+        return autocorrect_enabled;
     }
-    return true; // default to enabled
+#endif
+    return autocorrect_enabled; // return cached state or default
 }
 
 void autocorrect_enable(void) {
+    autocorrect_enabled = true;
+#if FIXED_PARTITION_EXISTS(storage)
     uint8_t enabled = 1;
     (void)nvs_write(&fs, AUTOCORRECT_ENABLE_ID, &enabled, sizeof(enabled));
+#endif
 }
 
 void autocorrect_disable(void) {
+    autocorrect_enabled = false;
+#if FIXED_PARTITION_EXISTS(storage)
     uint8_t enabled = 0;
     (void)nvs_write(&fs, AUTOCORRECT_ENABLE_ID, &enabled, sizeof(enabled));
+#endif
 }
 
 void autocorrect_toggle(void) {

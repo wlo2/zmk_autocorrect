@@ -6,18 +6,6 @@
 
 / {
     behaviors {
-        ac_on: autocorrect_on {
-            compatible = "zmk,behavior-autocorrect-on";
-            #binding-cells = <0>;
-            display-name = "AC On";
-        };
-        
-        ac_off: autocorrect_off {
-            compatible = "zmk,behavior-autocorrect-off";
-            #binding-cells = <0>;
-            display-name = "AC Off";
-        };
-        
         ac_togg: autocorrect_toggle {
             compatible = "zmk,behavior-autocorrect-toggle";
             #binding-cells = <0>;

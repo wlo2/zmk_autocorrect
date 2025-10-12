@@ -6,6 +6,7 @@ if (CONFIG_ZMK_AUTOCORRECT)
   # or the central half of a split.
   if ((NOT CONFIG_ZMK_SPLIT) OR CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
     zephyr_library_sources(src/autocorrect.c)
+    zephyr_library_sources(src/behaviors/behavior_autocorrect_toggle.c)
   endif()
   
   # The include directories are needed for all builds with the feature enabled,

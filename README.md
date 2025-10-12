@@ -27,11 +27,9 @@ This module adds an autocorrect feature to ZMK, similar to the one found in QMK.
     #include <behaviors/autocorrect.dtsi>
     ```
 
-4.  **Add the keycodes to your keymap.**
-    The following keycodes are available to control the autocorrect feature:
-    - `&ac_on`: Enables autocorrect.
-    - `&ac_off`: Disables autocorrect.
-    - `&ac_togg`: Toggles autocorrect.
+4.  **Add the keycode to your keymap (optional).**
+    Autocorrect is enabled by default when you boot your keyboard. If you want to control it:
+    - `&ac_togg`: Toggles autocorrect on/off.
 
 ## Customizing the Dictionary
 
