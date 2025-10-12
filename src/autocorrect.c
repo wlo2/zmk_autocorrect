@@ -11,6 +11,11 @@
 #include <dt-bindings/zmk/modifiers.h>
 #include <dt-bindings/zmk/hid_usage.h>
 #include <dt-bindings/zmk/hid_usage_pages.h>
+#include <zephyr/logging/log.h>
+
+LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+
+#define AUTOCORRECT_DEBUG 1
 
 #if __has_include("autocorrect_data.h")
 #    include "autocorrect_data.h"
@@ -29,6 +34,9 @@ static uint8_t typo_buffer_size = 1;
 
 // Initialize NVS
 static int autocorrect_init(void) {
+#if AUTOCORRECT_DEBUG
+    LOG_INF("Autocorrect: Initializing...");
+#endif
 #if FIXED_PARTITION_EXISTS(storage)
     int rc;
     fs.offset = FLASH_AREA_OFFSET(storage);
@@ -36,8 +44,21 @@ static int autocorrect_init(void) {
     fs.sector_count = 3;
     rc = nvs_mount(&fs);
     if (rc) {
+#if AUTOCORRECT_DEBUG
+        LOG_ERR("Autocorrect: NVS mount failed: %d", rc);
+#endif
         return rc;
     }
+#if AUTOCORRECT_DEBUG
+    LOG_INF("Autocorrect: NVS mounted successfully");
+#endif
+#else
+#if AUTOCORRECT_DEBUG
+    LOG_INF("Autocorrect: No storage partition, using in-memory state");
+#endif
+#endif
+#if AUTOCORRECT_DEBUG
+    LOG_INF("Autocorrect: Initialized successfully, enabled=%s", autocorrect_enabled ? "true" : "false");
 #endif
     return 0;
 }
@@ -76,10 +97,19 @@ void autocorrect_disable(void) {
 
 void autocorrect_toggle(void) {
     if (autocorrect_is_enabled()) {
+#if AUTOCORRECT_DEBUG
+        LOG_INF("Autocorrect: Disabling");
+#endif
         autocorrect_disable();
     } else {
+#if AUTOCORRECT_DEBUG
+        LOG_INF("Autocorrect: Enabling");
+#endif
         autocorrect_enable();
     }
+#if AUTOCORRECT_DEBUG
+    LOG_INF("Autocorrect: Toggle completed, now %s", autocorrect_enabled ? "enabled" : "disabled");
+#endif
 }
 
 static void tap_code(uint16_t keycode) {
@@ -131,6 +161,10 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     if (ev == NULL || !ev->state) {
         return ZMK_EV_EVENT_BUBBLE;
     }
+
+#if AUTOCORRECT_DEBUG
+    LOG_INF("Autocorrect: Key event - keycode=0x%04X, enabled=%s", ev->keycode, autocorrect_is_enabled() ? "true" : "false");
+#endif
 
     if (!autocorrect_is_enabled()) {
         typo_buffer_size = 0;
