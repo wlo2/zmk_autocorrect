@@ -22,8 +22,8 @@
 #define AUTOCORRECT_ENABLE_ID 1
 
 static struct nvs_fs fs;
-static uint8_t typo_buffer[AUTOCORRECT_MAX_LENGTH] = {0};
-static uint8_t typo_buffer_size = 0;
+static uint8_t typo_buffer[AUTOCORRECT_MAX_LENGTH] = {44}; // Initialize with KC_SPC equivalent
+static uint8_t typo_buffer_size = 1;
 
 // Initialize NVS
 static int autocorrect_init(void) {
@@ -137,21 +137,26 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         return ZMK_EV_EVENT_BUBBLE;
     }
 
+    // Convert ZMK HID usage codes to QMK-compatible keycodes for buffer storage
+    uint8_t qmk_keycode;
+    
     switch (keycode) {
     case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_A) ... ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_Z):
-        // process normally
+        // Convert to QMK KC_A...KC_Z (4-29)
+        qmk_keycode = keycode - ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_A) + 4;
         break;
     case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION) ... ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS):
     case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_TAB) ... ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SEMICOLON_AND_COLON):
     case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_GRAVE_ACCENT_AND_TILDE) ... ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SLASH_AND_QUESTION_MARK):
-        // Set a word boundary if space, period, digit, etc. is pressed.
-        keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR);
+        // Set a word boundary - QMK uses KC_SPC (44)
+        qmk_keycode = 44;
         break;
     case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_RETURN_ENTER):
         // Behave more conservatively for the enter key. Reset, so that enter
         // can't be used on a word ending.
-        typo_buffer_size = 0;
-        keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR);
+        typo_buffer_size = 1;
+        typo_buffer[0] = 44; // KC_SPC
+        qmk_keycode = 44;
         break;
     case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE):
         // Remove last character from the buffer.
@@ -162,14 +167,20 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_APOSTROPHE_AND_QUOTE):
         // Treat " (shifted ') as a word boundary.
         if ((zmk_hid_get_explicit_mods() & (MOD_LSFT | MOD_RSFT)) != 0) {
-            keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR);
+            qmk_keycode = 44; // KC_SPC
+        } else {
+            // Normal quote, process as letter (QMK keycode for quote)
+            qmk_keycode = 52;
         }
         break;
     default:
         // Clear state if some other non-alpha key is pressed.
-        typo_buffer_size = 0;
+        typo_buffer_size = 1;
+        typo_buffer[0] = 44; // KC_SPC
         return ZMK_EV_EVENT_BUBBLE;
     }
+    
+    keycode = qmk_keycode; // Use QMK-compatible keycode for rest of function
 
     // Rotate oldest character if buffer is full.
     if (typo_buffer_size >= AUTOCORRECT_MAX_LENGTH) {
@@ -188,15 +199,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     uint16_t state = 0;
     uint8_t code = autocorrect_data[state];
     for (int8_t i = typo_buffer_size - 1; i >= 0; --i) {
-        uint8_t key_i = typo_buffer[i];
-        
-        // Convert HID keycode to character offset for trie matching
-        if (key_i >= ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_A) && 
-            key_i <= ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_Z)) {
-            key_i = key_i - ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_A);
-        } else if (key_i == ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR)) {
-            key_i = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR);
-        }
+        uint8_t const key_i = typo_buffer[i];  // Use QMK keycodes directly
 
         if (code & 64) { // Check for match in node with multiple children.
             code &= 63;
@@ -228,9 +231,9 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
             char typo[AUTOCORRECT_MAX_LENGTH + 1] = {0};
             uint8_t typo_len = 0;
             uint8_t typo_start = 0;
-            bool space_last = typo_buffer[typo_buffer_size - 1] == ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR);
+            bool space_last = typo_buffer[typo_buffer_size - 1] == 44; // KC_SPC
             for (uint8_t i = typo_buffer_size; i > 0; --i) {
-                if (typo_buffer[i - 1] == ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR) && i != typo_buffer_size) {
+                if (typo_buffer[i - 1] == 44 && i != typo_buffer_size) { // KC_SPC
                     typo_start = i;
                     break;
                 }
@@ -242,7 +245,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
             }
 
             for (uint8_t i = 0; i < typo_len; ++i) {
-                typo[i] = typo_buffer[typo_start + i] - ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_A) + 'a';
+                typo[i] = typo_buffer[typo_start + i] - 4 + 'a'; // Convert from KC_A (4) to 'a'
             }
 
             char correct[AUTOCORRECT_MAX_LENGTH + 10] = {0};
@@ -257,8 +260,8 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
                 send_string(changes);
             }
 
-            if (keycode == ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR)) {
-                typo_buffer[0] = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR);
+            if (keycode == 44) { // KC_SPC
+                typo_buffer[0] = 44;
                 typo_buffer_size = 1;
                 return ZMK_EV_EVENT_BUBBLE;
             } else {
