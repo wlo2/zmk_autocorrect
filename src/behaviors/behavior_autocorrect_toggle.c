@@ -28,7 +28,6 @@ static void tap_key(uint32_t usage) {
 }
 #endif
 
-LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
