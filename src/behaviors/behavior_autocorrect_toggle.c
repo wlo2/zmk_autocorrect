@@ -11,7 +11,7 @@
 #include <zephyr/logging/log.h>
 #include <zmk/behavior.h>
 
-#if (NOT CONFIG_ZMK_SPLIT) OR CONFIG_ZMK_SPLIT_ROLE_CENTRAL
+#if (!CONFIG_ZMK_SPLIT) || CONFIG_ZMK_SPLIT_ROLE_CENTRAL
 #include <zmk/autocorrect.h>
 #endif
 
@@ -25,7 +25,7 @@ static int behavior_autocorrect_toggle_init(const struct device *dev) {
 
 static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
                                      struct zmk_behavior_binding_event event) {
-#if (NOT CONFIG_ZMK_SPLIT) OR CONFIG_ZMK_SPLIT_ROLE_CENTRAL
+#if (!CONFIG_ZMK_SPLIT) || CONFIG_ZMK_SPLIT_ROLE_CENTRAL
     autocorrect_toggle();
 #endif
     return ZMK_BEHAVIOR_OPAQUE;

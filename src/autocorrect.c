@@ -21,14 +21,16 @@
 
 #define AUTOCORRECT_ENABLE_ID 1
 
+#if FIXED_PARTITION_EXISTS(storage)
 static struct nvs_fs fs;
+#endif
 static uint8_t typo_buffer[AUTOCORRECT_MAX_LENGTH] = {44}; // Initialize with KC_SPC equivalent
 static uint8_t typo_buffer_size = 1;
 
 // Initialize NVS
 static int autocorrect_init(void) {
-    int rc = 0;
 #if FIXED_PARTITION_EXISTS(storage)
+    int rc;
     fs.offset = FLASH_AREA_OFFSET(storage);
     fs.sector_size = 4096;
     fs.sector_count = 3;
