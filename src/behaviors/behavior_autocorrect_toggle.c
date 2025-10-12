@@ -20,10 +20,10 @@
 // Simple key tap function for visual feedback
 static void tap_key(uint32_t usage) {
     zmk_hid_keyboard_press(usage);
-    zmk_endpoints_send_keyboard_report();
+    zmk_endpoints_send_report(ZMK_ENDPOINT_USB);
     k_msleep(10);
     zmk_hid_keyboard_release(usage);
-    zmk_endpoints_send_keyboard_report();
+    zmk_endpoints_send_report(ZMK_ENDPOINT_USB);
     k_msleep(10);
 }
 #endif

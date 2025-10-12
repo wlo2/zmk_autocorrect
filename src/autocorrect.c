@@ -58,7 +58,7 @@ static int autocorrect_init(void) {
 #endif
 #endif
 #if AUTOCORRECT_DEBUG
-    LOG_INF("Autocorrect: Initialized successfully, enabled=%s", autocorrect_enabled ? "true" : "false");
+    LOG_INF("Autocorrect: Initialized successfully, enabled=%s", autocorrect_is_enabled() ? "true" : "false");
 #endif
     return 0;
 }
