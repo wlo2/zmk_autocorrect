@@ -72,7 +72,7 @@
 //   udpate     -> update
 //   widht      -> width
 
-#define AUTOCORRECT_MIN_LENGTH 3  // allow short typos like "teh"
+#define AUTOCORRECT_MIN_LENGTH 5
 #define AUTOCORRECT_MAX_LENGTH 10 // "accomodate"
 
 #define DICTIONARY_SIZE 1104

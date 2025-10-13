@@ -1,4 +1,3 @@
-#ifdef CONFIG_ZTEST
 #include <zephyr/ztest.h>
 #include <string.h>
 #include <stdint.h>
@@ -54,13 +53,13 @@ ZTEST(autocorrect_suite, test_lookup_no_match) {
 }
 
 ZTEST(autocorrect_suite, test_punctuation_preserved_comma) {
-    // teh, -> the,
+    // cosnt, -> const,
     uint8_t buf[32]; uint8_t len;
-    to_usage_buf("teh,", buf, &len);
+    to_usage_buf("cosnt,", buf, &len);
     char out[32] = {0};
-    bool ok = ac_build_correct_for_test(buf, len, /*backspaces=*/3, /*changes=*/"the", out, sizeof(out));
+    bool ok = ac_build_correct_for_test(buf, len, /*backspaces=*/5, /*changes=*/"const", out, sizeof(out));
     zassert_true(ok, "build failed");
-    zassert_equal(strcmp(out, "the,"), 0, "expected 'the,', got '%s'", out);
+    zassert_equal(strcmp(out, "const,"), 0, "expected 'const,', got '%s'", out);
 }
 
 ZTEST(autocorrect_suite, test_punctuation_preserved_dot) {
@@ -131,5 +130,3 @@ ZTEST(autocorrect_suite, test_non_shift_mod_suppresses) {
 }
 
 ZTEST_SUITE(autocorrect_suite, NULL, NULL, NULL, NULL, NULL);
-
-#endif // CONFIG_ZTEST
