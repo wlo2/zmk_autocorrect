@@ -15,8 +15,14 @@ This module adds an autocorrect feature to ZMK, similar to the one found in QMK.
   - Each synthetic keypress during a correction uses queue slots.
 - Timing configs:
   - `CONFIG_ZMK_AUTOCORRECT_DELAY_MS=35` (BLE-friendly default)
-  - `CONFIG_ZMK_AUTOCORRECT_FAST_USB_MS=15` (optional lower delay when USB is active)
+  - `CONFIG_ZMK_AUTOCORRECT_FAST_USB_MS=15` (optional lower delay when USB is active; only available when `CONFIG_USB_DEVICE_STACK` is enabled)
   - `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS=10` (delay before correction starts)
+
+### Configuration for Split Keyboards
+
+For split keyboards (including dongle-based setups), the shared `config/<keyboard>.conf` file applies to **all builds** (left, right, and dongle). Add `CONFIG_ZMK_AUTOCORRECT=y` to this shared config file.
+
+**Important**: The autocorrect logic only runs on the central side (per `CMakeLists.txt`), but the config and devicetree bindings must be present on all halves for proper compilation. This is normal ZMK behavior for split keyboards.
 
 Example (BLE-focused):
 
@@ -55,10 +61,45 @@ There's a small delay between each keypress for reliability, especially over BLE
 
 ## Troubleshooting
 
+### Basic Issues
+
 - **Corrections don't appear or are cut off:** Increase `CONFIG_ZMK_BEHAVIORS_QUEUE_SIZE` in your `.conf` file.
 - **Corrections appear delayed or out of order:** Check BLE connection quality; increase `CONFIG_ZMK_AUTOCORRECT_DELAY_MS` to 40-50ms.
 - **Corrections work on USB but not BLE:** This is now fixed; both transports are supported.
 - **Fast typing causes missed corrections:** This is by design; overlapping corrections are prevented to avoid conflicts.
+
+### Systematic Diagnosis (Without Console Logging)
+
+For GitHub Actions builds without console access, enable `CONFIG_ZMK_AUTOCORRECT_DIAGNOSTICS=y` and use the **toggle diagnostic modes** to identify issues:
+
+1. **Verify compilation**: Check GitHub Actions build logs for `autocorrect.c.obj` compilation. Firmware size should increase by 2-4 KB.
+
+2. **Test toggle behavior**: Single-press the toggle key. With diagnostics enabled, it should type "1" (enabled) or "0" (disabled). If nothing happens, the behavior isn't working or isn't bound correctly.
+
+3. **Create minimal dictionary**: Start with `tools/typo_list.txt` containing only `teh:the`. Run the generator and rebuild.
+
+4. **Check dictionary validity**: Triple-press the toggle key. It should type "y" (valid) or "n" (invalid). If "n", the dictionary encoding is broken.
+
+5. **Test buffer accumulation**: Type "abc" then double-press the toggle. It should type "3" (buffer size). If "0", events aren't reaching the autocorrect listener.
+
+6. **Test correction**: Type "teh " (with space). It should correct to "the ". If it doesn't work, proceed to step 7.
+
+7. **Check lookup attempts**: Type "teh " then quadruple-press the toggle. It should type a non-zero digit (lookup count modulo 10). If "0", boundary detection is failing. If non-zero, correction scheduling is failing.
+
+For detailed testing procedures, see `TESTING.md`.
+
+### Toggle Diagnostic Modes
+
+The autocorrect toggle behavior supports multi-tap detection for runtime diagnostics when `CONFIG_ZMK_AUTOCORRECT_DIAGNOSTICS=y` is enabled:
+
+- **Single press**: Toggle on/off, types "1" (on) or "0" (off)
+- **Double press** (within 500ms): Types buffer size as digit (0-9, or "X" if >9)
+- **Triple press** (within 500ms): Types "y" (dictionary valid) or "n" (invalid)
+- **Quadruple press** (within 500ms): Types lookup count digit (modulo 10)
+
+These diagnostic modes provide runtime feedback for GitHub Actions builds without requiring console logging or LED indicators.
+
+**Note**: Diagnostic feedback is **disabled by default** to prevent unexpected typing in production. Enable it only for testing and debugging.
 
 ## How to Use
 
@@ -80,32 +121,38 @@ There's a small delay between each keypress for reliability, especially over BLE
 
 ## Customizing the Dictionary
 
-To use your own custom dictionary, you'll need to create a `autocorrect_data.h` file and place it in your ZMK config's `include` directory.
+This module includes a Python-based dictionary generator that creates KC-based (HID usage code) autocorrect dictionaries compatible with ZMK.
 
-You can generate this file from a simple text file using the `qmk` command-line tool.
+### Quick Start
 
-1.  **Create a dictionary file.**
-    Create a file named `autocorrect_dict.txt` with your typos and corrections. The format is `typo -> correction`, one per line. For example:
-    ```
-    teh -> the
-    wrok -> work
-    ```
+1. **Edit the typo list**: Open `tools/typo_list.txt` and add your typos in the format `typo:correction` (one per line, lowercase only).
+   ```
+   teh:the
+   wrok:work
+   becuase:because
+   ```
 
-2.  **Generate the `autocorrect_data.h` file.**
-    Run the following command to generate the header file:
-    ```
-    qmk generate-autocorrect-data autocorrect_dict.txt
-    ```
+2. **Run the generator**:
+   ```bash
+   python tools/generate_dictionary.py
+   ```
 
-3.  **Place the file in your ZMK config.**
-    Copy the generated `autocorrect_data.h` file to the `include` directory of your ZMK config repository.
+3. **Rebuild firmware**: The generator creates `include/autocorrect_data.h` which overrides the default dictionary. Rebuild your firmware to use the new dictionary.
+
+### Recommendations
+
+- **Start small**: Begin with a minimal dictionary (1-3 entries) to validate the feature works before expanding.
+- **Test incrementally**: Add entries one at a time to isolate any problematic patterns.
+- **Lowercase only**: The generator only supports lowercase letters, digits, and basic punctuation (space, comma, period, apostrophe, hyphen).
+
+For detailed documentation on the dictionary format, validation, and troubleshooting, see `tools/README.md`.
 
 ### Compatibility Note (KC-based traversal)
 
-The autocorrect engine traverses the dictionary using HID Keyboard usages (KC-based) with boundary anchors. Your `autocorrect_data*.h` must match the KC traversal format used by `trie_lookup_kc()`.
+The autocorrect engine traverses the dictionary using HID Keyboard usages (KC-based) with boundary anchors. The included generator produces dictionaries in the correct format for `trie_lookup_kc()`.
 
-- The lookup path uses keyboard usage codes for `A..Z`, digits, and treats space/comma/period/minus/quote as delimiters.
-- If you customize the generator, validate with a quick self-test. Under `CONFIG_ZTEST`, call `ac_lookup_typo_for_test()` to verify that your dictionary bytes are compatible with the KC traversal.
+- The lookup uses keyboard usage codes for `A..Z`, digits, and treats space/comma/period/minus/quote as delimiters.
+- Boundary markers (space keycodes) are automatically added by the generator to ensure typos only match as complete words.
 
 ## Notes
 

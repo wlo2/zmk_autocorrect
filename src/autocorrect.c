@@ -51,6 +51,11 @@ static uint32_t last_delim_index = 0; // index into a logical stream position
 // Track currently pressed modifiers to allow suppression under non-shift mods
 static uint8_t mods_pressed = 0; // bitmask for E0..E7 usages (low 8 bits)
 
+// Diagnostic state
+static bool dict_valid = false;
+static uint32_t event_count = 0;
+static uint32_t lookup_count = 0;
+static uint32_t correction_count = 0;
 
 static inline bool is_modifier_usage(uint8_t usage) {
     return usage >= HID_USAGE_KEY_KEYBOARD_LEFTCONTROL && usage <= HID_USAGE_KEY_KEYBOARD_RIGHT_GUI;
@@ -59,6 +64,7 @@ static inline bool is_modifier_usage(uint8_t usage) {
 // KC-based traversal: compares raw 6-bit node keys to HID usage codes (e.g., 0x04..0x1D for A..Z, 0x2C for boundary)
 static bool trie_lookup_kc(const uint8_t *kc_seq, uint8_t len, uint8_t *out_backspaces, const char **out_changes) {
     if (!kc_seq || len == 0 || !out_backspaces || !out_changes) return false;
+    lookup_count++;
     uint16_t state = 0;
     uint8_t pos = 0;
 
@@ -152,7 +158,7 @@ static inline bool is_printable_usage(uint8_t usage) {
 static inline int selected_delay_ms(void) {
     // Use a faster delay for USB builds if configured
     int d = CONFIG_ZMK_AUTOCORRECT_DELAY_MS;
-#if defined(CONFIG_USB_DEVICE_STACK)
+#if defined(CONFIG_USB_DEVICE_STACK) && defined(CONFIG_ZMK_AUTOCORRECT_FAST_USB_MS)
     // On firmware built with USB support, optionally use fast USB delay
     if (CONFIG_ZMK_AUTOCORRECT_FAST_USB_MS > 0 && CONFIG_ZMK_AUTOCORRECT_FAST_USB_MS < d) {
         d = CONFIG_ZMK_AUTOCORRECT_FAST_USB_MS;
@@ -374,6 +380,30 @@ static int autocorrect_init(void) {
 #if AUTOCORRECT_DEBUG
     LOG_INF("Autocorrect: Initialized successfully, enabled=%s", autocorrect_is_enabled() ? "true" : "false");
 #endif
+
+#if CONFIG_ZMK_AUTOCORRECT_SELFTEST
+    // Dictionary self-test: basic sanity check
+    dict_valid = (DICTIONARY_SIZE > 0);
+    if (dict_valid) {
+        uint8_t first_byte = autocorrect_data[0];
+        uint8_t node_type = first_byte & 0xC0;
+        // Valid node types: 0x00 (chain), 0x40 (branch), 0x80 (leaf)
+        dict_valid = (node_type == 0x00 || node_type == 0x40 || node_type == 0x80);
+    }
+#if AUTOCORRECT_DEBUG
+    if (dict_valid) {
+        LOG_INF("Autocorrect: Dictionary self-test PASSED (size=%u, first_byte=0x%02x)", 
+                DICTIONARY_SIZE, autocorrect_data[0]);
+    } else {
+        LOG_INF("Autocorrect: Dictionary self-test FAILED (size=%u, first_byte=0x%02x)", 
+                DICTIONARY_SIZE, DICTIONARY_SIZE > 0 ? autocorrect_data[0] : 0);
+    }
+#endif
+#else
+    // Self-test disabled, assume valid
+    dict_valid = true;
+#endif
+
     return 0;
 }
 
@@ -451,6 +481,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     LOG_INF("Autocorrect: Key event - keycode=0x%04X, enabled=%s", ev->keycode, autocorrect_is_enabled() ? "true" : "false");
 #endif
 
+    event_count++;
     if (!autocorrect_is_enabled()) {
         typo_buffer_size = 0;
         return ZMK_EV_EVENT_BUBBLE;
@@ -524,7 +555,10 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         memmove(typo_buffer, typo_buffer + 1, AUTOCORRECT_MAX_LENGTH - 1);
         typo_buffer_size = AUTOCORRECT_MAX_LENGTH - 1;
     }
-    typo_buffer[typo_buffer_size++] = usage8;
+    // Boundary check to prevent overflow
+    if (typo_buffer_size < AUTOCORRECT_MAX_LENGTH) {
+        typo_buffer[typo_buffer_size++] = usage8;
+    }
     atomic_inc(&autocorrect_seq);
     if (is_printable_delimiter(usage8)) {
         last_delim_index = 0; // not tracking absolute stream; kept for future use
@@ -619,10 +653,13 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         correction_work.changes_ptr = changes;
         correction_work.suffix_delim = suffix_delim;
         atomic_set(&correction_work.seq, atomic_get(&autocorrect_seq));
-        k_work_schedule(&correction_work.work, K_MSEC(CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS));
+        int sched_result = k_work_schedule(&correction_work.work, K_MSEC(CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS));
+        if (sched_result >= 0) {
+            correction_count++;
+        }
 #if AUTOCORRECT_DEBUG
-        LOG_INF("Autocorrect: Scheduled work seq=%ld delay_ms=%d",
-                (long)atomic_get(&correction_work.seq), (int)CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS);
+        LOG_INF("Autocorrect: Scheduled work seq=%ld delay_ms=%d result=%d",
+                (long)atomic_get(&correction_work.seq), (int)CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS, sched_result);
 #endif
     }
 
@@ -758,3 +795,16 @@ bool ac_lookup_typo_for_test(const uint8_t *buf, uint8_t size, uint8_t *out_back
 
 void ac_set_mods_for_test(uint8_t mods_mask) { mods_pressed = mods_mask; }
 #endif
+
+// Diagnostic getter functions
+uint8_t autocorrect_get_buffer_size(void) {
+    return typo_buffer_size;
+}
+
+bool autocorrect_dict_is_valid(void) {
+    return dict_valid;
+}
+
+uint32_t autocorrect_get_lookup_count(void) {
+    return lookup_count;
+}

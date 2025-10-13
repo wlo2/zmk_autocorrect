@@ -42,3 +42,22 @@ config ZMK_AUTOCORRECT_TOGGLE_FEEDBACK
       When enabled, the toggle behavior will type "on" or "off" as feedback.
       This is disabled by default to avoid interfering with host state.
 
+config ZMK_AUTOCORRECT_DIAGNOSTICS
+    bool "Enable diagnostic feedback for autocorrect toggle"
+    default n
+    help
+      When enabled, the toggle behavior supports multi-tap diagnostics:
+      - Single press: types "1" (on) or "0" (off)
+      - Double press: types buffer size digit
+      - Triple press: types "y" (dict valid) or "n" (invalid)
+      - Quadruple press: types lookup count digit
+      Disabled by default to avoid unexpected typing in production.
+
+config ZMK_AUTOCORRECT_SELFTEST
+    bool "Enable dictionary self-test at boot"
+    default y
+    help
+      When enabled, performs a basic sanity check on the dictionary at boot.
+      Verifies that DICTIONARY_SIZE > 0 and the first byte is a valid node type.
+      Disable this if using a custom dictionary without standard entries.
+

@@ -18,6 +18,11 @@ void autocorrect_enable(void);
 void autocorrect_disable(void);
 void autocorrect_toggle(void);
 
+// Diagnostic functions for runtime debugging
+uint8_t autocorrect_get_buffer_size(void);
+bool autocorrect_dict_is_valid(void);
+uint32_t autocorrect_get_lookup_count(void);
+
 #ifdef CONFIG_ZTEST
 bool ac_build_correct_for_test(const uint8_t *buf, uint8_t size, uint8_t backspaces,
                                const char *changes, char *out, size_t out_sz);
