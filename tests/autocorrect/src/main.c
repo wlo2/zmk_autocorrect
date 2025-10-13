@@ -1,3 +1,4 @@
+#ifdef CONFIG_ZTEST
 #include <zephyr/ztest.h>
 #include <string.h>
 #include <stdint.h>
@@ -130,3 +131,5 @@ ZTEST(autocorrect_suite, test_non_shift_mod_suppresses) {
 }
 
 ZTEST_SUITE(autocorrect_suite, NULL, NULL, NULL, NULL, NULL);
+
+#endif // CONFIG_ZTEST
