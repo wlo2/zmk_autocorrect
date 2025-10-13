@@ -1,0 +1,7 @@
+common:
+  harness: ztest
+  tags: autocorrect
+
+tests:
+  autocorrect.punctuation_and_bounds:
+    platform_allow: native_posix native_sim

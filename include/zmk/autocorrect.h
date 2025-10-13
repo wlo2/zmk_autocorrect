@@ -17,3 +17,11 @@ bool autocorrect_is_enabled(void);
 void autocorrect_enable(void);
 void autocorrect_disable(void);
 void autocorrect_toggle(void);
+
+#ifdef CONFIG_ZTEST
+bool ac_build_correct_for_test(const uint8_t *buf, uint8_t size, uint8_t backspaces,
+                               const char *changes, char *out, size_t out_sz);
+void ac_set_mods_for_test(uint8_t mods_mask);
+bool ac_lookup_typo_for_test(const uint8_t *buf, uint8_t size, uint8_t *out_backspaces,
+                             const char **out_changes);
+#endif

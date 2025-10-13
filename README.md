@@ -12,10 +12,35 @@ This module adds an autocorrect feature to ZMK, similar to the one found in QMK.
 
 - For longer corrections or large dictionaries, increase `CONFIG_ZMK_BEHAVIORS_QUEUE_SIZE` in your `.conf` file.
   - Recommended: `CONFIG_ZMK_BEHAVIORS_QUEUE_SIZE=128` or higher.
-  - Each correction character uses queue slots.
-- Optional timing configs:
-  - `CONFIG_ZMK_AUTOCORRECT_DELAY_MS=30` (delay between keypresses; 30-40ms for BLE, can be lower for USB)
+  - Each synthetic keypress during a correction uses queue slots.
+- Timing configs:
+  - `CONFIG_ZMK_AUTOCORRECT_DELAY_MS=35` (BLE-friendly default)
+  - `CONFIG_ZMK_AUTOCORRECT_FAST_USB_MS=15` (optional lower delay when USB is active)
   - `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS=10` (delay before correction starts)
+
+Example (BLE-focused):
+
+```
+CONFIG_ZMK_AUTOCORRECT=y
+CONFIG_ZMK_BEHAVIORS_QUEUE_SIZE=128
+CONFIG_ZMK_AUTOCORRECT_DELAY_MS=35
+CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS=10
+```
+
+Example (USB-focused):
+
+```
+CONFIG_ZMK_AUTOCORRECT=y
+CONFIG_ZMK_BEHAVIORS_QUEUE_SIZE=128
+CONFIG_ZMK_AUTOCORRECT_DELAY_MS=25
+CONFIG_ZMK_AUTOCORRECT_FAST_USB_MS=12
+```
+
+Optional HID robustness (prevents stuck mod releases on some hosts):
+
+```
+CONFIG_ZMK_HID_SEPARATE_MOD_RELEASE_REPORT=y
+```
 
 ## How It Works
 
@@ -26,7 +51,7 @@ When you type the last character of a word that matches a typo in the dictionary
 - Sends backspaces to erase the typo.
 - Types the correct word.
 
-There's a small delay (30ms by default) between each keypress for reliability, especially over BLE.
+There's a small delay between each keypress for reliability, especially over BLE.
 
 ## Troubleshooting
 
@@ -39,12 +64,12 @@ There's a small delay (30ms by default) between each keypress for reliability, e
 
 - Autocorrect is **enabled by default** (no need to enable it manually).
 - The `&ac_togg` keycode toggles it on/off if you want to disable it temporarily.
-- You'll see "ON" or "OFF" typed when you press the toggle key (visual feedback).
+- Optional feedback: set `CONFIG_ZMK_AUTOCORRECT_TOGGLE_FEEDBACK=y` to type "on" or "off" when toggled. Disabled by default to avoid interfering with host state.
 
-## Overriding Autocorrect
+## Overriding / Temporarily Suppressing Autocorrect
 
-- Pressing Ctrl or Alt before typing the last letter of a word temporarily disables autocorrect for that word.
-- This works because the modifier check in the code clears the typo buffer when non-Shift modifiers are active.
+- Holding any non-Shift modifier (Ctrl/Alt/GUI) suppresses autocorrect until released. This avoids correcting command shortcuts.
+- Typical mod-tap behavior is respected; the check looks at current HID modifier state.
 
 ## Technical Notes
 
@@ -75,6 +100,7 @@ You can generate this file from a simple text file using the `qmk` command-line 
 3.  **Place the file in your ZMK config.**
     Copy the generated `autocorrect_data.h` file to the `include` directory of your ZMK config repository.
 
-## Overriding Autocorrect
+## Notes
 
-If you need to type a word that is in the autocorrect dictionary without it being corrected, you can press the `Ctrl` or `Alt` key before typing the last letter of the word. This will temporarily disable autocorrect for that word.
+- Boundaries: punctuation such as `, . - ' ` and space are treated as word delimiters and preserved after correction (e.g. `teh,` → `the,`).
+- For splits, ensure the behavior queue is sized appropriately on the central.

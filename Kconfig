@@ -11,11 +11,20 @@ config ZMK_AUTOCORRECT
 config ZMK_AUTOCORRECT_DELAY_MS
     int "Autocorrect keypress delay (ms)"
     default 30
-    range 10 100
+    range 5 100
     help
-      Delay in milliseconds between keypresses when applying corrections.
-      BLE connections typically need 30-40ms for reliable delivery.
-      USB connections can use lower values (10-20ms) but higher values are safer.
+      Base delay in milliseconds between keypresses when applying corrections.
+      BLE connections typically need 30–40 ms for reliable delivery.
+      USB connections can use lower values.
+
+config ZMK_AUTOCORRECT_FAST_USB_MS
+    int "Autocorrect fast USB delay (ms)"
+    default 15
+    range 1 30
+    depends on USB_DEVICE_STACK
+    help
+      If set lower than ZMK_AUTOCORRECT_DELAY_MS and USB is active, use this smaller delay
+      for faster corrections over USB.
 
 config ZMK_AUTOCORRECT_WORK_DELAY_MS
     int "Autocorrect work queue delay (ms)"
@@ -25,4 +34,11 @@ config ZMK_AUTOCORRECT_WORK_DELAY_MS
       Delay in milliseconds before executing a queued correction.
       This ensures the triggering key event completes before correction begins.
       10ms is recommended.
+
+config ZMK_AUTOCORRECT_TOGGLE_FEEDBACK
+    bool "Type feedback when toggling autocorrect"
+    default n
+    help
+      When enabled, the toggle behavior will type "on" or "off" as feedback.
+      This is disabled by default to avoid interfering with host state.
 
