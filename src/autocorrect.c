@@ -1,3 +1,4 @@
+#include <zmk/endpoints.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/fs/nvs.h>
@@ -5,7 +6,7 @@
 #include <zmk/events/keycode_state_changed.h>
 #include <zmk/autocorrect.h>
 #include <zmk/hid.h>
-#include <zmk/usb_hid.h>
+#include <string.h>
 #include <zmk/keys.h>
 #include <zephyr/storage/flash_map.h>
 #include <dt-bindings/zmk/modifiers.h>
@@ -15,7 +16,7 @@
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-#define AUTOCORRECT_DEBUG 1
+#define AUTOCORRECT_DEBUG 0
 
 #if __has_include("autocorrect_data.h")
 #    include "autocorrect_data.h"
@@ -29,8 +30,65 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #if FIXED_PARTITION_EXISTS(storage)
 static struct nvs_fs fs;
 #endif
-static uint8_t typo_buffer[AUTOCORRECT_MAX_LENGTH] = {44}; // Initialize with KC_SPC equivalent
+static uint8_t typo_buffer[AUTOCORRECT_MAX_LENGTH] = {HID_USAGE_KEY_KEYBOARD_SPACEBAR}; // Initialize with space
 static uint8_t typo_buffer_size = 1;
+
+// Correction work container struct
+struct autocorrect_correction_work {
+    struct k_work_delayable work;
+    uint8_t backspaces;
+    char replacement[AUTOCORRECT_MAX_LENGTH + 10];
+    bool active;
+};
+static struct autocorrect_correction_work correction_work;
+
+// Correction work handler
+static void correction_work_handler(struct k_work *work) {
+    struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+    struct autocorrect_correction_work *cw = CONTAINER_OF(dwork, struct autocorrect_correction_work, work);
+#if AUTOCORRECT_DEBUG
+    LOG_INF("Autocorrect: Executing correction");
+#endif
+    cw->active = false;
+    // Send backspaces
+    for (uint8_t i = 0; i < cw->backspaces; ++i) {
+        zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
+        zmk_endpoints_send_report(HID_USAGE_KEY);
+        k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
+        zmk_hid_keyboard_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
+        zmk_endpoints_send_report(HID_USAGE_KEY);
+        k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
+    }
+    // Send replacement string
+    for (int i = 0; cw->replacement[i] != '\0'; i++) {
+        char c = cw->replacement[i];
+        uint16_t keycode;
+        if (c >= 'a' && c <= 'z') {
+            keycode = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'a')));
+            zmk_hid_keyboard_press(keycode);
+            zmk_endpoints_send_report(HID_USAGE_KEY);
+            k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
+            zmk_hid_keyboard_release(keycode);
+            zmk_endpoints_send_report(HID_USAGE_KEY);
+            k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
+        } else if (c >= 'A' && c <= 'Z') {
+            keycode = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'A')));
+            zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFTSHIFT));
+            zmk_endpoints_send_report(HID_USAGE_KEY);
+            k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
+            zmk_hid_keyboard_press(keycode);
+            zmk_endpoints_send_report(HID_USAGE_KEY);
+            k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
+            zmk_hid_keyboard_release(keycode);
+            zmk_endpoints_send_report(HID_USAGE_KEY);
+            k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
+            zmk_hid_keyboard_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFTSHIFT));
+            zmk_endpoints_send_report(HID_USAGE_KEY);
+            k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
+        }
+        // Skip non-alphabetic for now
+    }
+}
 
 // Initialize NVS
 static int autocorrect_init(void) {
@@ -52,11 +110,9 @@ static int autocorrect_init(void) {
 #if AUTOCORRECT_DEBUG
     LOG_INF("Autocorrect: NVS mounted successfully");
 #endif
-#else
-#if AUTOCORRECT_DEBUG
-    LOG_INF("Autocorrect: No storage partition, using in-memory state");
 #endif
-#endif
+    k_work_init_delayable(&correction_work.work, correction_work_handler);
+    correction_work.active = false;
 #if AUTOCORRECT_DEBUG
     LOG_INF("Autocorrect: Initialized successfully, enabled=%s", autocorrect_is_enabled() ? "true" : "false");
 #endif
@@ -114,34 +170,31 @@ void autocorrect_toggle(void) {
 
 static void tap_code(uint16_t keycode) {
     zmk_hid_keyboard_press(keycode);
-    zmk_usb_hid_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_KEY);
+    k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
     zmk_hid_keyboard_release(keycode);
-    zmk_usb_hid_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_KEY);
+    k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
 }
 
 static void send_string(const char *str) {
     for (int i = 0; str[i] != '\0'; i++) {
         char c = str[i];
         uint16_t keycode;
-        
         if (c >= 'a' && c <= 'z') {
             keycode = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'a')));
+            tap_code(keycode);
         } else if (c >= 'A' && c <= 'Z') {
-            // Handle uppercase letters with shift
             keycode = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'A')));
             zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFTSHIFT));
-            zmk_usb_hid_send_keyboard_report();
+            zmk_endpoints_send_report(HID_USAGE_KEY);
+            k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
             tap_code(keycode);
             zmk_hid_keyboard_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFTSHIFT));
-            zmk_usb_hid_send_keyboard_report();
-            continue;
-        } else {
-            // For now, skip non-alphabetic characters
-            // A full implementation would handle numbers, symbols, etc.
-            continue;
+            zmk_endpoints_send_report(HID_USAGE_KEY);
+            k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
         }
-        
-        tap_code(keycode);
+        // Skip non-alphabetic for now
     }
 }
 
@@ -175,144 +228,119 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         return ZMK_EV_EVENT_BUBBLE;
     }
 
-    uint16_t keycode = ev->keycode;
-
-    // Disable autocorrect while a mod other than shift is active.
-    if ((zmk_hid_get_explicit_mods() & ~(MOD_LSFT | MOD_RSFT)) != 0) {
-        typo_buffer_size = 0;
+    // Require keyboard usage page (0x07)
+    if (ev->usage_page != HID_USAGE_KEY) {
+        typo_buffer_size = 1;
+        typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
         return ZMK_EV_EVENT_BUBBLE;
     }
-
-    // Convert ZMK HID usage codes to QMK-compatible keycodes for buffer storage
-    uint8_t qmk_keycode;
-    
-    switch (keycode) {
-    case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_A) ... ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_Z):
-        // Convert to QMK KC_A...KC_Z (4-29)
-        qmk_keycode = keycode - ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_A) + 4;
-        break;
-    case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION) ... ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS):
-    case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_TAB) ... ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SEMICOLON_AND_COLON):
-    case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_GRAVE_ACCENT_AND_TILDE) ... ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SLASH_AND_QUESTION_MARK):
-        // Set a word boundary - QMK uses KC_SPC (44)
-        qmk_keycode = 44;
-        break;
-    case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_RETURN_ENTER):
-        // Behave more conservatively for the enter key. Reset, so that enter
-        // can't be used on a word ending.
-        typo_buffer_size = 1;
-        typo_buffer[0] = 44; // KC_SPC
-        qmk_keycode = 44;
-        break;
-    case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE):
-        // Remove last character from the buffer.
-        if (typo_buffer_size > 0) {
-            --typo_buffer_size;
-        }
-        return ZMK_EV_EVENT_BUBBLE;
-    case ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_APOSTROPHE_AND_QUOTE):
-        // Treat " (shifted ') as a word boundary.
-        if ((zmk_hid_get_explicit_mods() & (MOD_LSFT | MOD_RSFT)) != 0) {
-            qmk_keycode = 44; // KC_SPC
-        } else {
-            // Normal quote, process as letter (QMK keycode for quote)
-            qmk_keycode = 52;
-        }
-        break;
-    default:
-        // Clear state if some other non-alpha key is pressed.
-        typo_buffer_size = 1;
-        typo_buffer[0] = 44; // KC_SPC
+    uint8_t usage8 = (uint8_t)ev->keycode;
+    if (usage8 == HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE) {
+        if (typo_buffer_size > 0) { --typo_buffer_size; }
         return ZMK_EV_EVENT_BUBBLE;
     }
-    
-    keycode = qmk_keycode; // Use QMK-compatible keycode for rest of function
-
-    // Rotate oldest character if buffer is full.
+    if (usage8 == HID_USAGE_KEY_KEYBOARD_RETURN_ENTER) {
+        typo_buffer_size = 1;
+        typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+    // Append to buffer (apply MAX_LENGTH sliding window as you already do)
     if (typo_buffer_size >= AUTOCORRECT_MAX_LENGTH) {
         memmove(typo_buffer, typo_buffer + 1, AUTOCORRECT_MAX_LENGTH - 1);
         typo_buffer_size = AUTOCORRECT_MAX_LENGTH - 1;
     }
-
-    // Append `keycode` to buffer.
-    typo_buffer[typo_buffer_size++] = keycode;
-    // Return if buffer is smaller than the shortest word.
+    typo_buffer[typo_buffer_size++] = usage8;
     if (typo_buffer_size < AUTOCORRECT_MIN_LENGTH) {
         return ZMK_EV_EVENT_BUBBLE;
     }
 
-    // Check for typo in buffer using a trie stored in `autocorrect_data`.
     uint16_t state = 0;
     uint8_t code = autocorrect_data[state];
     for (int8_t i = typo_buffer_size - 1; i >= 0; --i) {
-        uint8_t const key_i = typo_buffer[i];  // Use QMK keycodes directly
-
-        if (code & 64) { // Check for match in node with multiple children.
+        uint8_t const key_i = typo_buffer[i];
+        if (code & 64) {
             code &= 63;
             for (; code != key_i; code = autocorrect_data[state += 3]) {
                 if (!code)
                     return ZMK_EV_EVENT_BUBBLE;
             }
-            // Follow link to child node.
             state = (autocorrect_data[state + 1] | autocorrect_data[state + 2] << 8);
-            // Check for match in node with single child.
         } else if (code != key_i) {
             return ZMK_EV_EVENT_BUBBLE;
         } else if (!(code = autocorrect_data[++state])) {
             ++state;
         }
-
-        // Stop if `state` becomes an invalid index. This should not normally
-        // happen, it is a safeguard in case of a bug, data corruption, etc.
         if (state >= DICTIONARY_SIZE) {
             return ZMK_EV_EVENT_BUBBLE;
         }
-
         code = autocorrect_data[state];
-
-        if (code & 128) { // A typo was found! Apply autocorrect.
+        if (code & 128) {
             const uint8_t backspaces = (code & 63);
             const char *changes = (const char *)(autocorrect_data + state + 1);
+
+#if AUTOCORRECT_DEBUG
+            LOG_INF("Autocorrect: TYPO FOUND! backspaces=%d, changes='%s'", backspaces, changes);
+#endif
 
             char typo[AUTOCORRECT_MAX_LENGTH + 1] = {0};
             uint8_t typo_len = 0;
             uint8_t typo_start = 0;
-            bool space_last = typo_buffer[typo_buffer_size - 1] == 44; // KC_SPC
+            bool space_last = typo_buffer[typo_buffer_size - 1] == HID_USAGE_KEY_KEYBOARD_SPACEBAR;
             for (uint8_t i = typo_buffer_size; i > 0; --i) {
-                if (typo_buffer[i - 1] == 44 && i != typo_buffer_size) { // KC_SPC
+                if (typo_buffer[i - 1] == HID_USAGE_KEY_KEYBOARD_SPACEBAR && i != typo_buffer_size) {
                     typo_start = i;
                     break;
                 }
                 ++typo_len;
             }
-
             if (space_last) {
                 --typo_len;
             }
-
+            uint8_t j = 0;
             for (uint8_t i = 0; i < typo_len; ++i) {
-                typo[i] = typo_buffer[typo_start + i] - 4 + 'a'; // Convert from KC_A (4) to 'a'
+                uint8_t b = typo_buffer[typo_start + i];
+                if (b >= HID_USAGE_KEY_KEYBOARD_A && b <= HID_USAGE_KEY_KEYBOARD_Z) {
+                    typo[j++] = 'a' + (b - HID_USAGE_KEY_KEYBOARD_A);
+                }
             }
-
+            typo[j] = '\0';
             char correct[AUTOCORRECT_MAX_LENGTH + 10] = {0};
-            uint8_t offset = space_last ? backspaces : backspaces + 1;
-            strcpy(correct, typo);
-            strcpy(correct + typo_len - offset, changes);
+            size_t start = (backspaces > typo_len) ? 0 : (typo_len - backspaces);
+            size_t maxlen = sizeof(correct) - 1;
+            if (start > 0 && start < maxlen) {
+                memcpy(correct, typo, start);
+            }
+            correct[start] = '\0';
+            strncat(correct, changes, maxlen - strlen(correct));
+            if (space_last && strlen(correct) < maxlen) {
+                strncat(correct, " ", maxlen - strlen(correct));
+            }
 
             if (apply_autocorrect(backspaces, changes, typo, correct)) {
-                for (uint8_t i = 0; i < backspaces; ++i) {
-                    tap_code(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
+                if (correction_work.active) {
+#if AUTOCORRECT_DEBUG
+                    LOG_INF("Autocorrect: Correction already active, skipping");
+#endif
+                    return ZMK_EV_EVENT_BUBBLE;
                 }
-                send_string(changes);
+#if AUTOCORRECT_DEBUG
+                LOG_INF("Autocorrect: Queuing correction work");
+#endif
+                correction_work.active = true;
+                correction_work.backspaces = backspaces;
+                strncpy(correction_work.replacement, changes, sizeof(correction_work.replacement) - 1);
+                correction_work.replacement[sizeof(correction_work.replacement) - 1] = '\0';
+                k_work_schedule(&correction_work.work, K_MSEC(CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS));
             }
 
-            if (keycode == 44) { // KC_SPC
-                typo_buffer[0] = 44;
+            // When resetting buffer after correction
+            if (usage8 == HID_USAGE_KEY_KEYBOARD_SPACEBAR) {
+                typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
                 typo_buffer_size = 1;
                 return ZMK_EV_EVENT_BUBBLE;
             } else {
                 typo_buffer_size = 0;
-                return ZMK_EV_EVENT_HANDLED;
+                return ZMK_EV_EVENT_BUBBLE;
             }
         }
     }

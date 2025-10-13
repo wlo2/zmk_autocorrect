@@ -1,7 +1,28 @@
-
 config ZMK_AUTOCORRECT
   bool "Autocorrect"
   default n
   help
     Enable the autocorrect feature.
+
+# Note: For long corrections or large dictionaries, you may need to increase
+# CONFIG_ZMK_BEHAVIORS_QUEUE_SIZE in your .conf file.
+# Recommended: CONFIG_ZMK_BEHAVIORS_QUEUE_SIZE=128 or higher.
+
+config ZMK_AUTOCORRECT_DELAY_MS
+    int "Autocorrect keypress delay (ms)"
+    default 30
+    range 10 100
+    help
+      Delay in milliseconds between keypresses when applying corrections.
+      BLE connections typically need 30-40ms for reliable delivery.
+      USB connections can use lower values (10-20ms) but higher values are safer.
+
+config ZMK_AUTOCORRECT_WORK_DELAY_MS
+    int "Autocorrect work queue delay (ms)"
+    default 10
+    range 0 50
+    help
+      Delay in milliseconds before executing a queued correction.
+      This ensures the triggering key event completes before correction begins.
+      10ms is recommended.
 

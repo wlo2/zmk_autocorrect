@@ -9,19 +9,22 @@
 #include <zephyr/device.h>
 #include <drivers/behavior.h>
 #include <zmk/behavior.h>
+#include <zmk/endpoints.h>
 
 #if (!CONFIG_ZMK_SPLIT) || CONFIG_ZMK_SPLIT_ROLE_CENTRAL
 #include <zmk/autocorrect.h>
 #include <zmk/hid.h>
-#include <zmk/usb_hid.h>
+#include <zephyr/kernel.h>
 #include <dt-bindings/zmk/hid_usage.h>
 #include <dt-bindings/zmk/hid_usage_pages.h>
 
 static void tap_code(uint16_t keycode) {
     zmk_hid_keyboard_press(keycode);
-    zmk_usb_hid_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_KEY);
+    k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
     zmk_hid_keyboard_release(keycode);
-    zmk_usb_hid_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_KEY);
+    k_sleep(K_MSEC(30));
 }
 
 static void send_string(const char *str) {
@@ -31,7 +34,13 @@ static void send_string(const char *str) {
         
         if (c >= 'A' && c <= 'Z') {
             keycode = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'A')));
+            zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFTSHIFT));
+            zmk_endpoints_send_report(HID_USAGE_KEY);
+            k_sleep(K_MSEC(30));
             tap_code(keycode);
+            zmk_hid_keyboard_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFTSHIFT));
+            zmk_endpoints_send_report(HID_USAGE_KEY);
+            k_sleep(K_MSEC(30));
         }
     }
 }
