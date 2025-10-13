@@ -100,6 +100,13 @@ You can generate this file from a simple text file using the `qmk` command-line 
 3.  **Place the file in your ZMK config.**
     Copy the generated `autocorrect_data.h` file to the `include` directory of your ZMK config repository.
 
+### Compatibility Note (KC-based traversal)
+
+The autocorrect engine traverses the dictionary using HID Keyboard usages (KC-based) with boundary anchors. Your `autocorrect_data*.h` must match the KC traversal format used by `trie_lookup_kc()`.
+
+- The lookup path uses keyboard usage codes for `A..Z`, digits, and treats space/comma/period/minus/quote as delimiters.
+- If you customize the generator, validate with a quick self-test. Under `CONFIG_ZTEST`, call `ac_lookup_typo_for_test()` to verify that your dictionary bytes are compatible with the KC traversal.
+
 ## Notes
 
 - Boundaries: punctuation such as `, . - ' ` and space are treated as word delimiters and preserved after correction (e.g. `teh,` → `the,`).

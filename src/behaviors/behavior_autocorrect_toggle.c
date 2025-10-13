@@ -10,39 +10,29 @@
 #include <drivers/behavior.h>
 #include <zmk/behavior.h>
 #include <zmk/endpoints.h>
+#include <zmk/keys.h>
 
 #if (!CONFIG_ZMK_SPLIT) || CONFIG_ZMK_SPLIT_ROLE_CENTRAL
 #include <zmk/autocorrect.h>
+#include <zmk/autocorrect_internal.h>
 #include <zmk/hid.h>
 #include <zephyr/kernel.h>
 #include <dt-bindings/zmk/hid_usage.h>
 #include <dt-bindings/zmk/hid_usage_pages.h>
 
-static inline void hid_clear_and_flush(void) {
-    zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(HID_USAGE_KEY);
-}
-
-static void tap_code(uint16_t keycode) {
-    zmk_hid_keyboard_press(keycode);
-    zmk_endpoints_send_report(HID_USAGE_KEY);
-    k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
-    zmk_hid_keyboard_release(keycode);
-    zmk_endpoints_send_report(HID_USAGE_KEY);
-    k_sleep(K_MSEC(CONFIG_ZMK_AUTOCORRECT_DELAY_MS));
-}
-
+#if CONFIG_ZMK_AUTOCORRECT_TOGGLE_FEEDBACK
 static void send_string_lower(const char *str) {
     for (int i = 0; str[i] != '\0'; i++) {
         char c = str[i];
         if (c >= 'a' && c <= 'z') {
-            uint16_t keycode = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'a')));
-            tap_code(keycode);
+            zmk_key_t keycode = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'a')));
+            press_and_release(keycode);
         } else if (c == ' ') {
-            tap_code(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR));
+            press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR));
         }
     }
 }
+#endif
 #endif
 
 #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)

@@ -6,6 +6,7 @@
 #include <zmk/events/keycode_state_changed.h>
 #include <zmk/autocorrect.h>
 #include <zmk/hid.h>
+#include <zmk/autocorrect_internal.h>
 #include <string.h>
 #include <zmk/keys.h>
 #include <zephyr/storage/flash_map.h>
@@ -160,7 +161,7 @@ static inline int selected_delay_ms(void) {
     return d;
 }
 
-static inline void hid_clear_and_flush(void) {
+void hid_clear_and_flush(void) {
     zmk_hid_keyboard_clear();
     zmk_endpoints_send_report(HID_USAGE_KEY);
 }
@@ -173,7 +174,7 @@ static void safe_send_report(void) {
     }
 }
 
-static void press_and_release(uint16_t usage) {
+void press_and_release(zmk_key_t usage) {
     zmk_hid_keyboard_press(usage);
     safe_send_report();
     k_sleep(K_MSEC(selected_delay_ms()));
@@ -185,12 +186,12 @@ static void press_and_release(uint16_t usage) {
 static bool send_char(char c) {
     // Map common ASCII to HID usages; returns false if unsupported
     if (c >= 'a' && c <= 'z') {
-        uint16_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_A + (c - 'a'));
+        zmk_key_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'a')));
         press_and_release(kc);
         return true;
     }
     if (c >= 'A' && c <= 'Z') {
-        uint16_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_A + (c - 'A'));
+        zmk_key_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'A')));
         zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFTSHIFT));
         safe_send_report();
         k_sleep(K_MSEC(selected_delay_ms()));
@@ -202,12 +203,12 @@ static bool send_char(char c) {
     }
     if (c >= '1' && c <= '9') {
         uint16_t base = HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION;
-        uint16_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, base + (c - '1'));
+        zmk_key_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, (base + (c - '1')));
         press_and_release(kc);
         return true;
     }
     if (c == '0') {
-        uint16_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS);
+        zmk_key_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS));
         press_and_release(kc);
         return true;
     }
@@ -240,7 +241,7 @@ static inline uint8_t ascii_to_kc(char c) {
 
 // QMK-compatible traversal over serialized trie in autocorrect_data
 // On success, sets out_backspaces and out_changes (pointer into autocorrect_data string)
-static bool trie_lookup(const char *typo, uint8_t len, uint8_t *out_backspaces, const char **out_changes) {
+static __maybe_unused bool trie_lookup(const char *typo, uint8_t len, uint8_t *out_backspaces, const char **out_changes) {
     if (!typo || len == 0 || !out_backspaces || !out_changes) return false;
     uint16_t state = 0; // byte offset into autocorrect_data
     uint8_t pos = 0;
@@ -308,13 +309,15 @@ static void correction_work_handler(struct k_work *work) {
     struct k_work_delayable *dwork = k_work_delayable_from_work(work);
     struct autocorrect_correction_work *cw = CONTAINER_OF(dwork, struct autocorrect_correction_work, work);
 #if AUTOCORRECT_DEBUG
-    LOG_INF("Autocorrect: Executing correction");
+    LOG_INF("Autocorrect: Executing correction seq=%ld backspaces=%u changes_ptr=%p",
+            (long)atomic_get(&cw->seq), cw->backspaces, cw->changes_ptr);
 #endif
     // Cancel if sequence advanced (buffer changed) since scheduling
     atomic_val_t current = atomic_get(&autocorrect_seq);
     if (current != atomic_get(&cw->seq)) {
 #if AUTOCORRECT_DEBUG
-        LOG_INF("Autocorrect: Sequence advanced, cancel correction");
+        LOG_INF("Autocorrect: Sequence advanced (now=%ld scheduled=%ld), cancel correction",
+                (long)current, (long)atomic_get(&cw->seq));
 #endif
         return;
     }
@@ -411,9 +414,9 @@ void autocorrect_toggle(void) {
 #endif
 }
 
-static void tap_code(uint16_t keycode) { press_and_release(keycode); }
+static __maybe_unused void tap_code(zmk_key_t keycode) { press_and_release(keycode); }
 
-static void send_string(const char *str) {
+static __maybe_unused void send_string(const char *str) {
     for (int i = 0; str[i] != '\0'; i++) {
         (void)send_char(str[i]);
     }
@@ -429,8 +432,9 @@ bool apply_autocorrect(uint8_t backspaces, const char *str, char *typo, char *co
 __attribute__((weak))
 bool process_autocorrect_user(struct zmk_keycode_state_changed *ev) {
     // Suppress autocorrect while non-shift modifiers are actively pressed
-    uint8_t non_shift_mods = mods_pressed & ~((1 << (HID_USAGE_KEY_KEYBOARD_LEFTSHIFT - HID_USAGE_KEY_KEYBOARD_LEFTCONTROL)) |
-                                              (1 << (HID_USAGE_KEY_KEYBOARD_RIGHTSHIFT - HID_USAGE_KEY_KEYBOARD_LEFTCONTROL)));
+    uint8_t shift_mask = (uint8_t)((1u << (HID_USAGE_KEY_KEYBOARD_LEFTSHIFT - HID_USAGE_KEY_KEYBOARD_LEFTCONTROL)) |
+                                   (1u << (HID_USAGE_KEY_KEYBOARD_RIGHTSHIFT - HID_USAGE_KEY_KEYBOARD_LEFTCONTROL)));
+    uint8_t non_shift_mods = (uint8_t)(mods_pressed & (uint8_t)(~shift_mask));
     return non_shift_mods == 0;
 }
 
@@ -462,6 +466,9 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         typo_buffer_size = 1;
         typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
         atomic_inc(&autocorrect_seq);
+#if AUTOCORRECT_DEBUG
+        LOG_INF("Autocorrect: Reset buffer on non-keyboard event");
+#endif
         return ZMK_EV_EVENT_BUBBLE;
     }
     uint8_t usage8 = (uint8_t)ev->keycode;
@@ -494,6 +501,9 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         typo_buffer_size = 1;
         typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
         atomic_inc(&autocorrect_seq);
+#if AUTOCORRECT_DEBUG
+        LOG_INF("Autocorrect: Delimiter (ENTER) seen, cancel work & reset");
+#endif
         return ZMK_EV_EVENT_BUBBLE;
     }
 
@@ -503,6 +513,9 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         typo_buffer_size = 1;
         typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
         atomic_inc(&autocorrect_seq);
+#if AUTOCORRECT_DEBUG
+        LOG_INF("Autocorrect: Non-printable usage=0x%02X, cancel work & reset", usage8);
+#endif
         return ZMK_EV_EVENT_BUBBLE;
     }
 
@@ -517,6 +530,9 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         last_delim_index = 0; // not tracking absolute stream; kept for future use
         // Cancel any pending work on new delimiter (space etc.)
         k_work_cancel_delayable(&correction_work.work);
+#if AUTOCORRECT_DEBUG
+        LOG_INF("Autocorrect: Printable delimiter 0x%02X seen, cancel pending work", usage8);
+#endif
     }
     if (typo_buffer_size < AUTOCORRECT_MIN_LENGTH) {
         return ZMK_EV_EVENT_BUBBLE;
@@ -595,7 +611,8 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
 
     if (matched && changes != NULL && apply_autocorrect(backspaces, changes, typo, correct)) {
 #if AUTOCORRECT_DEBUG
-        LOG_INF("Autocorrect: Queuing correction work");
+        LOG_INF("Autocorrect: Match found backspaces=%u changes=\"%s\" kclen=%u",
+                backspaces, changes, kclen);
 #endif
         uint8_t eff_backspaces = backspaces > typo_len ? typo_len : backspaces;
         correction_work.backspaces = eff_backspaces;
@@ -603,6 +620,10 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         correction_work.suffix_delim = suffix_delim;
         atomic_set(&correction_work.seq, atomic_get(&autocorrect_seq));
         k_work_schedule(&correction_work.work, K_MSEC(CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS));
+#if AUTOCORRECT_DEBUG
+        LOG_INF("Autocorrect: Scheduled work seq=%ld delay_ms=%d",
+                (long)atomic_get(&correction_work.seq), (int)CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS);
+#endif
     }
 
     // Buffer maintenance: keep sliding window; only seed on space or after scheduling a correction
