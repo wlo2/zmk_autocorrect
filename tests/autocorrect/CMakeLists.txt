@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.20.0)
 
-find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+# Use Zephyr's boilerplate for app builds under Twister
+include($ENV{ZEPHYR_BASE}/cmake/app/boilerplate.cmake NO_POLICY_SCOPE)
 project(autocorrect_tests)
 
 # Test sources
