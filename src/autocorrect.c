@@ -19,6 +19,12 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #define AUTOCORRECT_DEBUG 0
 
+#if __has_include(<autocorrect_data.h>)
+#include <autocorrect_data.h>
+#else
+#include <autocorrect_data_default.h>
+#endif
+
 static bool autocorrect_enabled = true; // Default state (cached)
 
 struct autocorrect_correction_work {
@@ -44,11 +50,6 @@ static uint32_t last_delim_index = 0; // index into a logical stream position
 // Track currently pressed modifiers to allow suppression under non-shift mods
 static uint8_t mods_pressed = 0; // bitmask for E0..E7 usages (low 8 bits)
 
-#if __has_include(<autocorrect_data.h>)
-#include <autocorrect_data.h>
-#else
-#include <autocorrect_data_default.h>
-#endif
 
 static inline bool is_modifier_usage(uint8_t usage) {
     return usage >= HID_USAGE_KEY_KEYBOARD_LEFTCONTROL && usage <= HID_USAGE_KEY_KEYBOARD_RIGHT_GUI;
