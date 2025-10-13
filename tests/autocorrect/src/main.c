@@ -21,6 +21,16 @@ static uint8_t usage_from_char(char c) {
     case '\'': return 0x34; // apostrophe
     default: return 0; // not covered
     }
+}
+
+static void to_usage_buf(const char *s, uint8_t *buf, uint8_t *len) {
+    uint8_t i = 0;
+    while (s[i] != '\0') {
+        buf[i] = usage_from_char(s[i]);
+        i++;
+    }
+    *len = i;
+}
 
 ZTEST(autocorrect_suite, test_lookup_becuase_space) {
     // becuase  -> because

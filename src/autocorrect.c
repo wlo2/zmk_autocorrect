@@ -55,6 +55,70 @@ static inline bool is_modifier_usage(uint8_t usage) {
     return usage >= HID_USAGE_KEY_KEYBOARD_LEFTCONTROL && usage <= HID_USAGE_KEY_KEYBOARD_RIGHT_GUI;
 }
 
+// KC-based traversal: compares raw 6-bit node keys to HID usage codes (e.g., 0x04..0x1D for A..Z, 0x2C for boundary)
+static bool trie_lookup_kc(const uint8_t *kc_seq, uint8_t len, uint8_t *out_backspaces, const char **out_changes) {
+    if (!kc_seq || len == 0 || !out_backspaces || !out_changes) return false;
+    uint16_t state = 0;
+    uint8_t pos = 0;
+
+    while (1) {
+        uint8_t b = autocorrect_data[state];
+        uint8_t node_type = b & 0xC0; // 00=chain, 01=branch, 10=leaf
+
+        if (node_type == 0x80) { // leaf
+            if (pos != len) {
+                return false; // reached leaf before consuming all input
+            }
+            uint8_t backspaces = (uint8_t)(b & 0x7F);
+            const char *rep = (const char *)&autocorrect_data[state + 1];
+            *out_backspaces = backspaces;
+            *out_changes = rep;
+            return true;
+        } else if (node_type == 0x40) { // branch
+            if (pos >= len) {
+                return false; // need more input to choose a branch
+            }
+            uint8_t want = kc_seq[pos] & 0x3F;
+            uint16_t idx = state;
+            bool matched = false;
+            while (1) {
+                uint8_t key = autocorrect_data[idx] & 0x3F; // strip type bits
+                if (key == 0) break; // end of branches
+                uint16_t link = (uint16_t)autocorrect_data[idx + 1] | ((uint16_t)autocorrect_data[idx + 2] << 8);
+                if (key == want) {
+                    state = link;
+                    pos++;
+                    matched = true;
+                    break;
+                }
+                idx += 3;
+            }
+            if (!matched) return false;
+            continue;
+        } else { // chain (top bits 00)
+            uint16_t idx = state;
+            while (1) {
+                uint8_t key = autocorrect_data[idx];
+                if (key == 0) {
+                    // move to child node encoded immediately after chain
+                    state = idx + 1;
+                    break;
+                }
+                if (pos >= len) {
+                    return false; // input shorter than chain
+                }
+                uint8_t want = kc_seq[pos] & 0x3F;
+                if ((key & 0x3F) != want) {
+                    return false; // mismatch in chain
+                }
+                pos++;
+                idx++;
+            }
+            continue;
+        }
+    }
+}
+
 static inline bool is_shift_modifier(uint8_t usage) {
     return usage == HID_USAGE_KEY_KEYBOARD_LEFTSHIFT || usage == HID_USAGE_KEY_KEYBOARD_RIGHTSHIFT;
 }
@@ -494,10 +558,28 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     }
     typo[j] = '\0';
 
-    // Trie lookup using generated dictionary
+    // Build KC sequence with boundary anchors
+    uint8_t kc_seq[AUTOCORRECT_MAX_LENGTH + 2] = {0};
+    uint8_t kclen = 0;
+    // prepend boundary if start-of-buffer or preceding char is delimiter
+    if (typo_start == 0 || (typo_start > 0 && is_printable_delimiter(typo_buffer[typo_start - 1]))) {
+        kc_seq[kclen++] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
+    }
+    for (uint8_t i = 0; i < typo_len && kclen < (uint8_t)(AUTOCORRECT_MAX_LENGTH + 1); ++i) {
+        uint8_t b = typo_buffer[typo_start + i];
+        if (is_alpha_usage(b) || is_digit_usage(b)) {
+            kc_seq[kclen++] = b;
+        } else if (is_printable_delimiter(b)) {
+            break;
+        }
+    }
+    if (delim_last && kclen < (uint8_t)(AUTOCORRECT_MAX_LENGTH + 2)) {
+        kc_seq[kclen++] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
+    }
+    // Trie lookup using generated dictionary over KC sequence
     uint8_t backspaces = 0;
     const char *changes = NULL;
-    bool matched = trie_lookup(typo, j, &backspaces, &changes);
+    bool matched = trie_lookup_kc(kc_seq, kclen, &backspaces, &changes);
     char correct[AUTOCORRECT_MAX_LENGTH + 10] = {0};
 
     // Determine scheduling parameters and suffix delimiter
@@ -523,14 +605,16 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         k_work_schedule(&correction_work.work, K_MSEC(CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS));
     }
 
-    // When resetting buffer after correction
-    if (usage8 == HID_USAGE_KEY_KEYBOARD_SPACEBAR) {
+    // Buffer maintenance: keep sliding window; only seed on space or after scheduling a correction
+    if (matched) {
         typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
         typo_buffer_size = 1;
-    } else {
-        typo_buffer_size = 0;
+        atomic_inc(&autocorrect_seq);
+    } else if (usage8 == HID_USAGE_KEY_KEYBOARD_SPACEBAR) {
+        typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
+        typo_buffer_size = 1;
+        atomic_inc(&autocorrect_seq);
     }
-    atomic_inc(&autocorrect_seq);
     return ZMK_EV_EVENT_BUBBLE;
 }
 
@@ -631,16 +715,24 @@ bool ac_lookup_typo_for_test(const uint8_t *buf, uint8_t size, uint8_t *out_back
     if (delim_last && typo_len > 0) {
         --typo_len;
     }
-    char typo_ascii[AUTOCORRECT_MAX_LENGTH + 1] = {0};
-    uint8_t j = 0;
-    for (uint8_t i = 0; i < typo_len && j < AUTOCORRECT_MAX_LENGTH; ++i) {
+    // Build KC sequence with boundary anchors
+    uint8_t kc_seq[AUTOCORRECT_MAX_LENGTH + 2] = {0};
+    uint8_t kclen = 0;
+    if (typo_start == 0 || (typo_start > 0 && is_printable_delimiter(buf[typo_start - 1]))) {
+        kc_seq[kclen++] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
+    }
+    for (uint8_t i = 0; i < typo_len && kclen < (uint8_t)(AUTOCORRECT_MAX_LENGTH + 1); ++i) {
         uint8_t b = buf[typo_start + i];
-        if (is_alpha_usage(b)) {
-            typo_ascii[j++] = 'a' + (b - HID_USAGE_KEY_KEYBOARD_A);
+        if (is_alpha_usage(b) || is_digit_usage(b)) {
+            kc_seq[kclen++] = b;
+        } else if (is_printable_delimiter(b)) {
+            break;
         }
     }
-    typo_ascii[j] = '\0';
-    return trie_lookup(typo_ascii, j, out_backspaces, out_changes);
+    if (delim_last && kclen < (uint8_t)(AUTOCORRECT_MAX_LENGTH + 2)) {
+        kc_seq[kclen++] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
+    }
+    return trie_lookup_kc(kc_seq, kclen, out_backspaces, out_changes);
 }
 
 void ac_set_mods_for_test(uint8_t mods_mask) { mods_pressed = mods_mask; }
