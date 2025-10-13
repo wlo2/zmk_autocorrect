@@ -71,9 +71,9 @@ static inline bool is_printable_delimiter(uint8_t usage) {
     switch (usage) {
     case HID_USAGE_KEY_KEYBOARD_SPACEBAR:
     case HID_USAGE_KEY_KEYBOARD_APOSTROPHE_AND_QUOTE:
-    case HID_USAGE_KEY_KEYBOARD_HYPHEN_AND_UNDERSCORE:
+    case HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE:
     case HID_USAGE_KEY_KEYBOARD_COMMA_AND_LESS_THAN:
-    case HID_USAGE_KEY_KEYBOARD_DOT_AND_GREATER_THAN:
+    case HID_USAGE_KEY_KEYBOARD_PERIOD_AND_GREATER_THAN:
         return true;
     default:
         return false;
@@ -155,10 +155,10 @@ static bool send_char(char c) {
         press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_COMMA_AND_LESS_THAN));
         return true;
     case '.':
-        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DOT_AND_GREATER_THAN));
+        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_PERIOD_AND_GREATER_THAN));
         return true;
     case '-':
-        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_HYPHEN_AND_UNDERSCORE));
+        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE));
         return true;
     case '\'':
         press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_APOSTROPHE_AND_QUOTE));
@@ -506,8 +506,8 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         uint8_t lastu = typo_buffer[typo_buffer_size - 1];
         if (lastu == HID_USAGE_KEY_KEYBOARD_SPACEBAR) suffix_delim = ' ';
         else if (lastu == HID_USAGE_KEY_KEYBOARD_COMMA_AND_LESS_THAN) suffix_delim = ',';
-        else if (lastu == HID_USAGE_KEY_KEYBOARD_DOT_AND_GREATER_THAN) suffix_delim = '.';
-        else if (lastu == HID_USAGE_KEY_KEYBOARD_HYPHEN_AND_UNDERSCORE) suffix_delim = '-';
+        else if (lastu == HID_USAGE_KEY_KEYBOARD_PERIOD_AND_GREATER_THAN) suffix_delim = '.';
+        else if (lastu == HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE) suffix_delim = '-';
         else if (lastu == HID_USAGE_KEY_KEYBOARD_APOSTROPHE_AND_QUOTE) suffix_delim = '\'';
     }
 
@@ -602,8 +602,8 @@ bool ac_build_correct_for_test(const uint8_t *buf, uint8_t size, uint8_t backspa
             uint8_t lastu = buf[size - 1];
             if (lastu == HID_USAGE_KEY_KEYBOARD_SPACEBAR) out[cur++] = ' ';
             else if (lastu == HID_USAGE_KEY_KEYBOARD_COMMA_AND_LESS_THAN) out[cur++] = ',';
-            else if (lastu == HID_USAGE_KEY_KEYBOARD_DOT_AND_GREATER_THAN) out[cur++] = '.';
-            else if (lastu == HID_USAGE_KEY_KEYBOARD_HYPHEN_AND_UNDERSCORE) out[cur++] = '-';
+            else if (lastu == HID_USAGE_KEY_KEYBOARD_PERIOD_AND_GREATER_THAN) out[cur++] = '.';
+            else if (lastu == HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE) out[cur++] = '-';
             else if (lastu == HID_USAGE_KEY_KEYBOARD_APOSTROPHE_AND_QUOTE) out[cur++] = '\'';
             out[cur] = '\0';
         }
