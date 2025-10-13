@@ -60,7 +60,7 @@ static inline bool is_shift_modifier(uint8_t usage) {
 }
 
 static inline bool is_digit_usage(uint8_t usage) {
-    return usage >= HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION_POINT && usage <= HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS;
+    return usage >= HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION && usage <= HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PAREN;
 }
 
 static inline bool is_alpha_usage(uint8_t usage) {
@@ -137,13 +137,13 @@ static bool send_char(char c) {
         return true;
     }
     if (c >= '1' && c <= '9') {
-        uint16_t base = HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION_POINT;
+        uint16_t base = HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION;
         uint16_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, base + (c - '1'));
         press_and_release(kc);
         return true;
     }
     if (c == '0') {
-        uint16_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS);
+        uint16_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PAREN);
         press_and_release(kc);
         return true;
     }
@@ -482,10 +482,10 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
             typo[j++] = 'a' + (b - HID_USAGE_KEY_KEYBOARD_A);
         } else if (is_digit_usage(b)) {
             // map digits 1..0 where present
-            if (b == HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS) {
+            if (b == HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PAREN) {
                 typo[j++] = '0';
             } else {
-                typo[j++] = '1' + (b - HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION_POINT);
+                typo[j++] = '1' + (b - HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION);
             }
         } else if (is_printable_delimiter(b)) {
             // word boundary; stop
