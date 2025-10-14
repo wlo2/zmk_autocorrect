@@ -667,7 +667,6 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     if (matched) {
         typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
         typo_buffer_size = 1;
-        atomic_inc(&autocorrect_seq);
     } else if (usage8 == HID_USAGE_KEY_KEYBOARD_SPACEBAR) {
         typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
         typo_buffer_size = 1;

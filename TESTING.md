@@ -26,6 +26,7 @@ The autocorrect toggle behavior supports multi-tap detection to provide runtime 
 ### Double Press (within 500ms)
 - **Action**: Press toggle twice rapidly
 - **Output**: Types buffer size as digit (0-9, or "X" if >9)
+- **Note**: The buffer is initialized with a leading SPACEBAR (boundary marker), so typing "abc" will report buffer size "4" (SPACE + a + b + c). This is correct behavior for the autocorrect logic.
 - **Confirms**: Keys are being accumulated in the autocorrect buffer
 - **Diagnosis**: If always "0", events aren't reaching the listener
 
@@ -178,7 +179,21 @@ Follow this sequence for systematic diagnosis:
 - Isolate problematic entries
 
 ## 9. Common Issues
+### Issue: Lookups Attempted But No Corrections Execute
+- **Symptom**: Quadruple-press shows non-zero lookup count, buffer fills correctly, but corrections never appear
+- **Diagnosis**: Sequence number race condition in `src/autocorrect.c` line 670
+- **Cause**: The `autocorrect_seq` is incremented immediately after scheduling a correction, causing the work handler to detect a sequence mismatch and cancel the correction
+- **Solution**: Remove `atomic_inc(&autocorrect_seq);` at line 670 inside the `if (matched)` block
+- **Verification**: After fix, type `teh ` (with space) and it should correct to `the ` 
+- **Technical details**: The work is scheduled with a captured sequence number (line 655), but line 670 increments the global sequence. When the work handler runs 10ms later (line 323), it sees the sequence has changed and cancels the correction.
 
+### Issue: Multi-tap Diagnostics Not Working
+- **Symptom**: Triple-press outputs "1" or "0" instead of "y" or "n"; quadruple-press is unreachable
+- **Diagnosis**: The `tap_count` is being reset prematurely after double-press and triple-press
+- **Cause**: Bug in `src/behaviors/behavior_autocorrect_toggle.c` where `tap_count = 0` statements at lines 94 and 105 reset the sequence after each diagnostic
+- **Solution**: Remove `tap_count = 0;` statements at lines 94 and 105; keep only at line 120 (after quadruple-press)
+- **Verification**: After fix, triple-press should output "y" or "n" (dictionary validity), not toggle state
+- **Technical details**: The timeout logic (lines 52-56) already handles resetting tap_count after 500ms. Resetting after each diagnostic breaks the multi-tap sequence.
 ### Issue: Nothing Happens
 - **Diagnosis**: Single-press toggle
 - **If no output**: Behavior not working or not bound

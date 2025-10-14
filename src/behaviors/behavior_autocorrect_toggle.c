@@ -91,7 +91,6 @@ static int on_autocorrect_toggle_binding_pressed(struct zmk_behavior_binding *bi
         }
         press_and_release(keycode);
         hid_clear_and_flush();
-        tap_count = 0; // Reset after diagnostic
     }
     // Triple press: type dictionary validity
     else if (tap_count == 3) {
@@ -102,7 +101,6 @@ static int on_autocorrect_toggle_binding_pressed(struct zmk_behavior_binding *bi
             (feedback == 'y' ? HID_USAGE_KEY_KEYBOARD_Y : HID_USAGE_KEY_KEYBOARD_N));
         press_and_release(keycode);
         hid_clear_and_flush();
-        tap_count = 0; // Reset after diagnostic
     }
     // Quadruple press: type lookup count (modulo 10)
     else if (tap_count >= 4) {

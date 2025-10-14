@@ -61,12 +61,37 @@ There's a small delay between each keypress for reliability, especially over BLE
 
 ## Troubleshooting
 
+### Critical Bug: Sequence Number Race Condition
+
+**Symptom**: Buffer fills correctly, lookups are attempted (non-zero lookup count), but corrections never execute.
+
+**Cause**: In `src/autocorrect.c` at line 670, the code increments `autocorrect_seq` immediately after scheduling a correction. This causes the work handler to detect a sequence mismatch and cancel the correction.
+
+**Fix**: Remove the `atomic_inc(&autocorrect_seq);` statement at line 670 inside the `if (matched)` block. Keep the increment at line 674 (in the `else if` block).
+
+**Verification**: After fix, type `teh ` (with space) and it should correct to `the `. Use quadruple-press diagnostic to verify lookup count is incrementing.
+
+### Testing Prerequisites
+
+**Important**: Before troubleshooting, ensure you're testing with typos that exist in your dictionary.
+
+- The default dictionary contains 70 entries (see `include/autocorrect_data_default.h`)
+- Common test entries: `teh` → `the`, `becuase` → `because`, `retrun` → `return` 
+- Test format: Type the typo followed by a boundary character (space, comma, period)
+- Example: Type `teh ` (with space) to trigger correction to `the ` 
+- Random character sequences like "mmmmmm" will NOT trigger corrections unless explicitly in your dictionary
+- Minimum word length: 3 characters (due to `AUTOCORRECT_MIN_LENGTH` = 5 including boundaries)
+
 ### Basic Issues
 
 - **Corrections don't appear or are cut off:** Increase `CONFIG_ZMK_BEHAVIORS_QUEUE_SIZE` in your `.conf` file.
 - **Corrections appear delayed or out of order:** Check BLE connection quality; increase `CONFIG_ZMK_AUTOCORRECT_DELAY_MS` to 40-50ms.
 - **Corrections work on USB but not BLE:** This is now fixed; both transports are supported.
 - **Fast typing causes missed corrections:** This is by design; overlapping corrections are prevented to avoid conflicts.
+
+### Timing Adjustments
+
+If fast typing cancels corrections, slightly increase CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS (e.g., 15–20ms).
 
 ### Systematic Diagnosis (Without Console Logging)
 
@@ -93,7 +118,7 @@ For detailed testing procedures, see `TESTING.md`.
 The autocorrect toggle behavior supports multi-tap detection for runtime diagnostics when `CONFIG_ZMK_AUTOCORRECT_DIAGNOSTICS=y` is enabled:
 
 - **Single press**: Toggle on/off, types "1" (on) or "0" (off)
-- **Double press** (within 500ms): Types buffer size as digit (0-9, or "X" if >9)
+- **Double press** (within 500ms): Types buffer size as digit (0-9, or "X" if >9). Note: Buffer includes a leading SPACEBAR boundary marker, so typing "abc" reports "4" (SPACE + a + b + c).
 - **Triple press** (within 500ms): Types "y" (dictionary valid) or "n" (invalid)
 - **Quadruple press** (within 500ms): Types lookup count digit (modulo 10)
 
