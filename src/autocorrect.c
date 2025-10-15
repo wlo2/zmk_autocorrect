@@ -421,6 +421,10 @@ static void persist_enabled_state(void) {
 void autocorrect_enable(void) {
     autocorrect_enabled = true;
     persist_enabled_state();
+    k_work_cancel_delayable(&correction_work.work);
+    typo_buffer_size = 1;
+    typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
+    atomic_inc(&autocorrect_seq);
 #if CONFIG_ZMK_AUTOCORRECT_TOGGLE_FEEDBACK
     // Optional feedback kept minimal to avoid host interference by default
     // send_string("on");
@@ -430,14 +434,20 @@ void autocorrect_enable(void) {
 void autocorrect_disable(void) {
     autocorrect_enabled = false;
     persist_enabled_state();
+    k_work_cancel_delayable(&correction_work.work);
+    typo_buffer_size = 0;
+    atomic_inc(&autocorrect_seq);
 #if CONFIG_ZMK_AUTOCORRECT_TOGGLE_FEEDBACK
     // send_string("off");
 #endif
 }
 
 void autocorrect_toggle(void) {
-    autocorrect_enabled = !autocorrect_enabled;
-    persist_enabled_state();
+    if (autocorrect_enabled) {
+        autocorrect_disable();
+    } else {
+        autocorrect_enable();
+    }
 #if CONFIG_ZMK_AUTOCORRECT_TOGGLE_FEEDBACK
     // Minimal optional feedback
     // send_string(autocorrect_enabled ? "on" : "off");
@@ -483,7 +493,6 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
 
     event_count++;
     if (!autocorrect_is_enabled()) {
-        typo_buffer_size = 0;
         return ZMK_EV_EVENT_BUBBLE;
     }
 
