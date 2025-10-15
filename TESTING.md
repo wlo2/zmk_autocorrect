@@ -113,7 +113,7 @@ Test boundary conditions:
 
 ### No Boundary
 - **Input**: `teh` (no space)
-- **Expected**: No correction (boundary not reached)
+- **Expected**: Immediate correction to `the` (no trailing space required)
 
 ### Leading Boundary
 - **Input**: ` teh ` (with leading space)
@@ -124,12 +124,12 @@ Test boundary conditions:
 - **Expected**: Corrects to "the,"
 
 ### Uppercase Suppression
-- **Input**: `TEH ` (all caps)
-- **Expected**: No correction (shift suppresses autocorrect)
+- **Input**: `TEH` (Shift held)
+- **Expected**: Correction occurs (Shift alone does not suppress autocorrect)
 
 ### Modifier Suppression
-- **Input**: `Ctrl+teh ` (with modifier)
-- **Expected**: No correction (modifiers suppress autocorrect)
+- **Input**: `Ctrl+teh` (with non-Shift modifier)
+- **Expected**: No correction (non-Shift modifiers suppress autocorrect)
 
 ## 8. Recommended Test Sequence
 
@@ -214,15 +214,41 @@ Follow this sequence for systematic diagnosis:
 - **Diagnosis**: Triple-press toggle types "n"
 - **Solution**: Regenerate dictionary, check for encoding errors
 
-## 10. Timing Adjustments
+## 10. Timing Tests
 
-If corrections are inconsistent, adjust timing:
+Use these tests to validate that corrections are complete and not racing the host's HID processing.
 
-- **Debounce delay**: 150ms (line 49 in `behavior_autocorrect_toggle.c`)
-- **Multi-tap window**: 500ms (for diagnostic modes)
-- **Work delay**: 5ms (line 622 in `autocorrect.c`)
+### Test Matrix
 
-Increase work delay if corrections are being dropped on slower systems.
+- **Vary work delay**: Test with `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS` set to 50 ms, 100 ms, and 150 ms.
+- **Transport**: Test on both USB and Bluetooth (BLE). If available, also set `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS` to 150 ms to verify BLE-specific delay selection.
+- **Typing rate**: Type normally and rapidly to ensure continued typing doesn't interfere with corrections.
+- **Race repro**: Set work delay to 10 ms to intentionally reproduce the race (last character missing) and then confirm the fix at 100 ms.
+
+### Expected Results
+
+- `becuase` → `because` (not `becuas`)
+- `tset` → `test` (not `tse`)
+- `teh` → `the` (not `th`)
+
+### Procedure
+
+1. Set work delay to target value and rebuild.
+2. Type each typo without a trailing delimiter; observe immediate correction after the last letter.
+3. Repeat over USB and BLE. If testing BLE-specific delay, set `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS=150` and verify corrections complete over BLE while USB can remain at 50–75 ms if desired.
+4. Increase typing speed to ensure pending corrections are either completed or intentionally canceled without partial output.
+
+### Troubleshooting Timing Issues
+
+- **Missing last character**: Work delay too short. Increase `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS` by 50 ms increments (e.g., 100 → 150 ms). For BLE, prefer `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS=150`.
+- **Corrections feel slow**: Work delay too long. Reduce gradually, but avoid going below ~50 ms on USB or ~100 ms on BLE.
+- **Corrections canceled while typing**: Expected if you continue typing within the work-delay window. If undesirable, increase the work delay a bit.
+
+### Connection-Specific Notes
+
+- **USB**: Lower latency. 50–75 ms work delay is typically sufficient.
+- **Bluetooth (BLE)**: Higher latency and host variance. 100–150 ms recommended.
+- **Host OS**: Less responsive systems may require the higher end of the range.
 
 ## 11. Without Diagnostic Modes
 

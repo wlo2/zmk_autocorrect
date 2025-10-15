@@ -169,6 +169,20 @@ static inline int selected_delay_ms(void) {
     return d;
 }
 
+static inline int selected_work_delay_ms(void) {
+    int d = CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS;
+#if defined(CONFIG_BT) && defined(CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS)
+    /* Prefer BLE-specific work delay when BLE is the active endpoint and a value is provided */
+    if (CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS > 0) {
+        enum zmk_endpoint sel = zmk_endpoints_selected();
+        if (sel == ZMK_ENDPOINT_BLE) {
+            d = CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS;
+        }
+    }
+#endif
+    return d;
+}
+
 void hid_clear_and_flush(void) {
     zmk_hid_keyboard_clear();
     zmk_endpoints_send_report(HID_USAGE_KEY);
@@ -684,13 +698,23 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         correction_work.changes_ptr = changes;
         correction_work.suffix_delim = suffix_delim;
         atomic_set(&correction_work.seq, atomic_get(&autocorrect_seq));
-        int sched_result = k_work_schedule(&correction_work.work, K_MSEC(CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS));
+        int sched_result = k_work_schedule(&correction_work.work, K_MSEC(selected_work_delay_ms()));
         if (sched_result >= 0) {
             correction_count++;
         }
 #if AUTOCORRECT_DEBUG
-        LOG_INF("Autocorrect: Scheduled work seq=%ld delay_ms=%d result=%d",
-                (long)atomic_get(&correction_work.seq), (int)CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS, sched_result);
+        {
+            int wd = selected_work_delay_ms();
+            const char *ep = "unknown";
+#if defined(CONFIG_USB_DEVICE_STACK)
+            if (zmk_endpoints_selected() == ZMK_ENDPOINT_USB) { ep = "USB"; }
+#endif
+#if defined(CONFIG_BT)
+            if (zmk_endpoints_selected() == ZMK_ENDPOINT_BLE) { ep = "BLE"; }
+#endif
+            LOG_INF("Autocorrect: Scheduled work seq=%ld delay_ms=%d endpoint=%s result=%d",
+                    (long)atomic_get(&correction_work.seq), wd, ep, sched_result);
+        }
 #endif
     }
 

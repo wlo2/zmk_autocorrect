@@ -14,7 +14,7 @@ config ZMK_AUTOCORRECT_DELAY_MS
     range 5 100
     help
       Base delay in milliseconds between keypresses when applying corrections.
-      BLE connections typically need 30–40 ms for reliable delivery.
+      BLE connections typically need 30-40 ms for reliable delivery.
       USB connections can use lower values.
 
 config ZMK_AUTOCORRECT_FAST_USB_MS
@@ -28,12 +28,28 @@ config ZMK_AUTOCORRECT_FAST_USB_MS
 
 config ZMK_AUTOCORRECT_WORK_DELAY_MS
     int "Autocorrect work queue delay (ms)"
-    default 10
-    range 0 50
+    default 100
+    range 50 300
     help
-      Delay in milliseconds before executing a queued correction.
-      This ensures the triggering key event completes before correction begins.
-      10ms is recommended.
+      Delay in milliseconds between detecting a typo and starting the correction.
+      This must be long enough for the last typed character's HID report to reach
+      and be processed by the host before backspaces begin, especially for
+      immediate corrections (no trailing delimiter). Typical guidance:
+      - USB: 50-75 ms
+      - Bluetooth (BLE): 100-150 ms
+      If corrections are missing the last character, increase this value.
+      Note: This is not the per-key delay; see ZMK_AUTOCORRECT_DELAY_MS for that.
+
+config ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS
+    int "Autocorrect work queue delay (ms) for BLE"
+    default 0
+    range 0 300
+    depends on BT
+    help
+      Work delay to use when a Bluetooth connection is active. BLE typically
+      has higher latency than USB, so a longer delay helps ensure the last
+      typed character reaches the host before correction begins. If set to 0,
+      the general ZMK_AUTOCORRECT_WORK_DELAY_MS is used for all connections.
 
 config ZMK_AUTOCORRECT_TOGGLE_FEEDBACK
     bool "Type feedback when toggling autocorrect"
@@ -60,4 +76,3 @@ config ZMK_AUTOCORRECT_SELFTEST
       When enabled, performs a basic sanity check on the dictionary at boot.
       Verifies that DICTIONARY_SIZE > 0 and the first byte is a valid node type.
       Disable this if using a custom dictionary without standard entries.
-
