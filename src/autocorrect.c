@@ -28,6 +28,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 static bool autocorrect_enabled = true; // Default state (cached)
 
+static atomic_t autocorrect_suppressed = ATOMIC_INIT(0); // Diagnostics/event suppression flag
+
 struct autocorrect_correction_work {
     struct k_work_delayable work;
     uint8_t backspaces;
@@ -454,6 +456,14 @@ void autocorrect_toggle(void) {
 #endif
 }
 
+void autocorrect_set_suppress(bool suppress) {
+    atomic_set(&autocorrect_suppressed, suppress ? 1 : 0);
+}
+
+bool autocorrect_is_suppressed(void) {
+    return atomic_get(&autocorrect_suppressed) != 0;
+}
+
 static __maybe_unused void tap_code(zmk_key_t keycode) { press_and_release(keycode); }
 
 static __maybe_unused void send_string(const char *str) {
@@ -490,6 +500,11 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
 #if AUTOCORRECT_DEBUG
     LOG_INF("Autocorrect: Key event - keycode=0x%04X, enabled=%s", ev->keycode, autocorrect_is_enabled() ? "true" : "false");
 #endif
+
+    // Ignore all events while suppressed (e.g., during diagnostics typing)
+    if (autocorrect_is_suppressed()) {
+        return ZMK_EV_EVENT_BUBBLE;
+    }
 
     event_count++;
     if (!autocorrect_is_enabled()) {

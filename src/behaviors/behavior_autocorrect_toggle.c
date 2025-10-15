@@ -71,8 +71,10 @@ static int on_autocorrect_toggle_binding_pressed(struct zmk_behavior_binding *bi
         char feedback = autocorrect_is_enabled() ? '1' : '0';
         zmk_key_t keycode = ZMK_HID_USAGE(HID_USAGE_KEY, 
             (feedback == '1' ? HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION : HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS));
+        autocorrect_set_suppress(true);
         press_and_release(keycode);
         hid_clear_and_flush();
+        autocorrect_set_suppress(false);
 #endif
     }
 #if CONFIG_ZMK_AUTOCORRECT_DIAGNOSTICS
@@ -89,8 +91,10 @@ static int on_autocorrect_toggle_binding_pressed(struct zmk_behavior_binding *bi
         } else {
             keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION + (feedback - '1'));
         }
+        autocorrect_set_suppress(true);
         press_and_release(keycode);
         hid_clear_and_flush();
+        autocorrect_set_suppress(false);
     }
     // Triple press: type dictionary validity
     else if (tap_count == 3) {
@@ -99,8 +103,10 @@ static int on_autocorrect_toggle_binding_pressed(struct zmk_behavior_binding *bi
         
         zmk_key_t keycode = ZMK_HID_USAGE(HID_USAGE_KEY, 
             (feedback == 'y' ? HID_USAGE_KEY_KEYBOARD_Y : HID_USAGE_KEY_KEYBOARD_N));
+        autocorrect_set_suppress(true);
         press_and_release(keycode);
         hid_clear_and_flush();
+        autocorrect_set_suppress(false);
     }
     // Quadruple press: type lookup count (modulo 10)
     else if (tap_count >= 4) {
@@ -113,8 +119,10 @@ static int on_autocorrect_toggle_binding_pressed(struct zmk_behavior_binding *bi
         } else {
             keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION + (feedback - '1'));
         }
+        autocorrect_set_suppress(true);
         press_and_release(keycode);
         hid_clear_and_flush();
+        autocorrect_set_suppress(false);
         tap_count = 0; // Reset after diagnostic
     }
 #endif

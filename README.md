@@ -53,11 +53,11 @@ CONFIG_ZMK_HID_SEPARATE_MOD_RELEASE_REPORT=y
 Autocorrect monitors your typing and maintains a buffer of recent characters.  
 When you type the last character of a word that matches a typo in the dictionary, autocorrect:
 - Detects the match immediately.
-- Queues a correction (with a small delay to let the current key complete).
+- Queues a correction with a small delay (default 10ms via `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS`) to let the current key complete.
 - Sends backspaces to erase the typo.
 - Types the correct word.
 
-There's a small delay between each keypress for reliability, especially over BLE.
+There's a small delay between each synthetic keypress for reliability, especially over BLE. Any additional typing within the work delay window will cancel the pending correction to avoid conflicts with continued typing; this is intentional.
 
 ## Troubleshooting
 
@@ -77,8 +77,10 @@ There's a small delay between each keypress for reliability, especially over BLE
 
 - The default dictionary contains 70 entries (see `include/autocorrect_data_default.h`)
 - Common test entries: `teh` → `the`, `becuase` → `because`, `retrun` → `return` 
-- Test format: Type the typo followed by a boundary character (space, comma, period)
-- Example: Type `teh ` (with space) to trigger correction to `the ` 
+- Test format: Type the typo followed by a trailing delimiter (space, comma, period, apostrophe, or hyphen)
+- Examples: `teh ` → `the `, `flase ` → `false `
+- When testing with diagnostics enabled, wait ~50–100ms after typing the delimiter before pressing the toggle; pressing it immediately can cancel the pending correction due to the intentional delay window.
+- The dictionary encodes typos with boundary markers so matches only occur for complete words.
 - Random character sequences like "mmmmmm" will NOT trigger corrections unless explicitly in your dictionary
 - Minimum word length: 3 characters (due to `AUTOCORRECT_MIN_LENGTH` = 5 including boundaries)
 
@@ -125,6 +127,12 @@ The autocorrect toggle behavior supports multi-tap detection for runtime diagnos
 These diagnostic modes provide runtime feedback for GitHub Actions builds without requiring console logging or LED indicators.
 
 **Note**: Diagnostic feedback is **disabled by default** to prevent unexpected typing in production. Enable it only for testing and debugging.
+
+### Diagnostic Testing
+
+- Diagnostic keypresses can interfere with pending corrections if pressed too soon after typing a typo and delimiter.
+- To observe corrections: type the typo plus delimiter, wait briefly (~50–100ms), then check diagnostics; or simply watch the correction complete on the host before toggling diagnostics.
+- A suppression mechanism prevents diagnostic output from affecting autocorrect processing, but understanding the timing window helps explain cancellation behavior.
 
 ## How to Use
 
