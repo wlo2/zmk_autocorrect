@@ -109,9 +109,25 @@ static int on_autocorrect_toggle_binding_pressed(struct zmk_behavior_binding *bi
         autocorrect_set_suppress(false);
     }
     // Quadruple press: type lookup count (modulo 10)
-    else if (tap_count >= 4) {
+    else if (tap_count == 4) {
         uint32_t lookup_count = autocorrect_get_lookup_count();
         char feedback = '0' + (lookup_count % 10);
+        
+        zmk_key_t keycode;
+        if (feedback == '0') {
+            keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS);
+        } else {
+            keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION + (feedback - '1'));
+        }
+        autocorrect_set_suppress(true);
+        press_and_release(keycode);
+        hid_clear_and_flush();
+        autocorrect_set_suppress(false);
+    }
+    // Quintuple press: type correction count (modulo 10)
+    else if (tap_count >= 5) {
+        uint32_t correction_count = autocorrect_get_correction_count();
+        char feedback = '0' + (correction_count % 10);
         
         zmk_key_t keycode;
         if (feedback == '0') {

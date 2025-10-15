@@ -34,11 +34,10 @@ def char_to_kc(c: str) -> int:
 
 
 def typo_to_kc_seq(typo: str) -> List[int]:
-    """Convert typo string to KC sequence with boundary markers."""
+    """Convert typo string to KC sequence with leading boundary only (no trailing boundary)."""
     seq = [0x2C]  # Prepend boundary (space)
     for c in typo.lower():
         seq.append(char_to_kc(c))
-    seq.append(0x2C)  # Append boundary (space)
     return seq
 
 

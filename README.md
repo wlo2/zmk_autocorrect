@@ -5,7 +5,7 @@ This module adds an autocorrect feature to ZMK, similar to the one found in QMK.
 ## Features
 
 - Autocorrect is **enabled by default** when the keyboard boots.
-- Correction **triggers when you type the last character** of a typo (e.g., typing "teh " will correct to "the " when you press space).
+- Correction **triggers immediately after typing the last letter** of a typo (no trailing space required).
 - Corrections work over both **USB and BLE** connections.
 
 ## Configuration
@@ -17,6 +17,7 @@ This module adds an autocorrect feature to ZMK, similar to the one found in QMK.
   - `CONFIG_ZMK_AUTOCORRECT_DELAY_MS=35` (BLE-friendly default)
   - `CONFIG_ZMK_AUTOCORRECT_FAST_USB_MS=15` (optional lower delay when USB is active; only available when `CONFIG_USB_DEVICE_STACK` is enabled)
   - `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS=10` (delay before correction starts)
+  - WARNING: `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS` should be at least 10ms. Values below ~5ms can cause normal typing to cancel corrections. Setting 1ms will typically result in nearly all corrections being canceled.
 
 ### Configuration for Split Keyboards
 
@@ -51,38 +52,28 @@ CONFIG_ZMK_HID_SEPARATE_MOD_RELEASE_REPORT=y
 ## How It Works
 
 Autocorrect monitors your typing and maintains a buffer of recent characters.  
-When you type the last character of a word that matches a typo in the dictionary, autocorrect:
+When you type the last character of a typo in the dictionary, autocorrect:
 - Detects the match immediately.
 - Queues a correction with a small delay (default 10ms via `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS`) to let the current key complete.
 - Sends backspaces to erase the typo.
 - Types the correct word.
 
-There's a small delay between each synthetic keypress for reliability, especially over BLE. Any additional typing within the work delay window will cancel the pending correction to avoid conflicts with continued typing; this is intentional.
+There's a small delay between each synthetic keypress for reliability, especially over BLE. Any additional typing within the work delay window will cancel the pending correction to avoid conflicts with continued typing; this is intentional. The work delay is the time between detecting a match and starting the correction, not the total correction time.
 
 ## Troubleshooting
-
-### Critical Bug: Sequence Number Race Condition
-
-**Symptom**: Buffer fills correctly, lookups are attempted (non-zero lookup count), but corrections never execute.
-
-**Cause**: In `src/autocorrect.c` at line 670, the code increments `autocorrect_seq` immediately after scheduling a correction. This causes the work handler to detect a sequence mismatch and cancel the correction.
-
-**Fix**: Remove the `atomic_inc(&autocorrect_seq);` statement at line 670 inside the `if (matched)` block. Keep the increment at line 674 (in the `else if` block).
-
-**Verification**: After fix, type `teh ` (with space) and it should correct to `the `. Use quadruple-press diagnostic to verify lookup count is incrementing.
 
 ### Testing Prerequisites
 
 **Important**: Before troubleshooting, ensure you're testing with typos that exist in your dictionary.
 
 - The default dictionary contains 70 entries (see `include/autocorrect_data_default.h`)
-- Common test entries: `teh` → `the`, `becuase` → `because`, `retrun` → `return` 
-- Test format: Type the typo followed by a trailing delimiter (space, comma, period, apostrophe, or hyphen)
-- Examples: `teh ` → `the `, `flase ` → `false `
-- When testing with diagnostics enabled, wait ~50–100ms after typing the delimiter before pressing the toggle; pressing it immediately can cancel the pending correction due to the intentional delay window.
-- The dictionary encodes typos with boundary markers so matches only occur for complete words.
+- Common test entries: `teh` → `the`, `becuase` → `because`, `retrun` → `return`
+- Test format: Type the typo only; corrections trigger immediately after the last letter (no delimiter required)
+- Examples: `teh` → `the`, `becuase` → `because`, `retrun` → `return`
+- When testing with diagnostics enabled, allow ~50–100ms after the typo before pressing the toggle; pressing it immediately can cancel the pending correction due to the intentional delay window.
+- The dictionary encodes typos with a leading boundary marker only; matches can occur as prefixes of longer words.
 - Random character sequences like "mmmmmm" will NOT trigger corrections unless explicitly in your dictionary
-- Minimum word length: 3 characters (due to `AUTOCORRECT_MIN_LENGTH` = 5 including boundaries)
+- Minimum word length equals the generated constant `AUTOCORRECT_MIN_LENGTH`, which is the minimum typo length (letters/digits only) found in your dictionary. There is no fixed boundary inflation.
 
 ### Basic Issues
 
@@ -93,7 +84,7 @@ There's a small delay between each synthetic keypress for reliability, especiall
 
 ### Timing Adjustments
 
-If fast typing cancels corrections, slightly increase CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS (e.g., 15–20ms).
+If fast typing cancels corrections, slightly increase CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS (e.g., 15–20ms). Total correction time ≈ work_delay + (backspaces × key_delay) + (replacement_chars × key_delay).
 
 ### Systematic Diagnosis (Without Console Logging)
 
@@ -109,9 +100,9 @@ For GitHub Actions builds without console access, enable `CONFIG_ZMK_AUTOCORRECT
 
 5. **Test buffer accumulation**: Type "abc" then double-press the toggle. It should type "3" (buffer size). If "0", events aren't reaching the autocorrect listener.
 
-6. **Test correction**: Type "teh " (with space). It should correct to "the ". If it doesn't work, proceed to step 7.
+6. **Test correction**: Type "teh" and pause briefly (~50–100ms). It should correct to "the" automatically. If it doesn't work, proceed to step 7.
 
-7. **Check lookup attempts**: Type "teh " then quadruple-press the toggle. It should type a non-zero digit (lookup count modulo 10). If "0", boundary detection is failing. If non-zero, correction scheduling is failing.
+7. **Check lookup attempts**: Type "teh" then wait ~50–100ms and quadruple-press the toggle. It should type a non-zero digit (lookup count modulo 10). If "0", leading-boundary detection is failing. If non-zero, correction scheduling may be failing.
 
 For detailed testing procedures, see `TESTING.md`.
 
@@ -123,6 +114,7 @@ The autocorrect toggle behavior supports multi-tap detection for runtime diagnos
 - **Double press** (within 500ms): Types buffer size as digit (0-9, or "X" if >9). Note: Buffer includes a leading SPACEBAR boundary marker, so typing "abc" reports "4" (SPACE + a + b + c).
 - **Triple press** (within 500ms): Types "y" (dictionary valid) or "n" (invalid)
 - **Quadruple press** (within 500ms): Types lookup count digit (modulo 10)
+- **Quintuple press** (within 500ms): Types correction count digit (modulo 10)
 
 These diagnostic modes provide runtime feedback for GitHub Actions builds without requiring console logging or LED indicators.
 
@@ -130,8 +122,9 @@ These diagnostic modes provide runtime feedback for GitHub Actions builds withou
 
 ### Diagnostic Testing
 
-- Diagnostic keypresses can interfere with pending corrections if pressed too soon after typing a typo and delimiter.
-- To observe corrections: type the typo plus delimiter, wait briefly (~50–100ms), then check diagnostics; or simply watch the correction complete on the host before toggling diagnostics.
+- Diagnostic keypresses can interfere with pending corrections if pressed too soon after typing a typo.
+- To observe corrections: type the typo, pause briefly (~50–100ms), then check diagnostics; or simply watch the correction complete on the host before toggling diagnostics.
+- Delimiters (space/comma/period/minus/quote) are preserved only when you actually type them and are handled via `suffix_delim`.
 - A suppression mechanism prevents diagnostic output from affecting autocorrect processing, but understanding the timing window helps explain cancellation behavior.
 
 ## How to Use
@@ -185,7 +178,13 @@ For detailed documentation on the dictionary format, validation, and troubleshoo
 The autocorrect engine traverses the dictionary using HID Keyboard usages (KC-based) with boundary anchors. The included generator produces dictionaries in the correct format for `trie_lookup_kc()`.
 
 - The lookup uses keyboard usage codes for `A..Z`, digits, and treats space/comma/period/minus/quote as delimiters.
-- Boundary markers (space keycodes) are automatically added by the generator to ensure typos only match as complete words.
+- Boundary markers now use only a leading space keycode, enabling immediate corrections without a trailing delimiter.
+
+## Tradeoffs and Limitations
+
+- **False positives**: Without trailing delimiters, the system cannot distinguish complete words from prefixes. If `the` is in your dictionary and you type `there`, it may attempt to correct after `the`.
+- **Mitigation**: Prefer longer typos (5+ characters) and avoid common word prefixes in your dictionary.
+- **Alternative**: If false positives are unacceptable, revert to delimiter-based matching by modifying the generator to add a trailing boundary and restoring the trailing boundary check in `src/autocorrect.c`.
 
 ## Notes
 

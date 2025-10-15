@@ -41,11 +41,11 @@ The generator converts characters to HID usage codes:
 
 ### Boundary Markers
 
-Each typo is wrapped with space keycodes (0x2C) as boundaries:
+Each typo is encoded with a **leading** space keycode (0x2C) as a boundary; there is **no trailing boundary**:
 - Input: `teh`
-- Encoded: `[0x2C, 0x17, 0x08, 0x0B, 0x2C]` (space, t, e, h, space)
+- Encoded: `[0x2C, 0x17, 0x08, 0x0B]` (space, t, e, h)
 
-This ensures typos only match as complete words, not as substrings.
+This enables immediate correction after typing the last letter, without requiring a trailing delimiter.
 
 ### Node Types
 
@@ -94,6 +94,21 @@ Each entry adds ~10-30 bytes depending on shared prefixes. A 100-entry dictionar
 - **Length constraints**: Typos should be 5-10 characters (configurable via `AUTOCORRECT_MIN_LENGTH` and `AUTOCORRECT_MAX_LENGTH`)
 - **Firmware size**: Large dictionaries increase firmware size
 - **No regex**: Only exact string matching is supported
+
+### Tradeoffs and Guidance
+
+- **False positives**: Without a trailing boundary, entries that are prefixes of valid words can match mid-word (e.g., `the` matches in `there`).
+- **Mitigation**: Prefer longer typos (5+ chars). Avoid common word prefixes.
+- **Examples**:
+  - Problematic: `the:the` (matches `there`, `them`, `then`)
+  - Safer: `becuase:because` (unlikely prefix)
+
+### Reverting to Delimiter-Based Matching
+
+If you prefer matching only complete words, re-introduce a trailing boundary and update firmware lookup accordingly:
+- In `tools/generate_dictionary.py`, add back `seq.append(0x2C)` at the end of `typo_to_kc_seq()`.
+- In `src/autocorrect.c`, re-add the trailing boundary check before lookup:
+  - In the main handler and test helper, append a space KC if the last typed character is a delimiter (restore the `delim_last` block).
 
 ## Advanced
 

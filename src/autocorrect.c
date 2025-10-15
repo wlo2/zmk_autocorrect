@@ -592,9 +592,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         LOG_INF("Autocorrect: Printable delimiter 0x%02X seen, cancel pending work", usage8);
 #endif
     }
-    if (typo_buffer_size < AUTOCORRECT_MIN_LENGTH) {
-        return ZMK_EV_EVENT_BUBBLE;
-    }
+    // Defer minimum-length check until we compute actual word length (letters/digits)
 
     // Extract the current word boundaries and delimiter
     uint8_t typo_len = 0;
@@ -610,6 +608,16 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     }
     if (delim_last && typo_len > 0) {
         --typo_len;
+    }
+
+    // Enforce minimum length based on actual word length
+    if (typo_len < AUTOCORRECT_MIN_LENGTH) {
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+
+    // Skip trie lookup if not at a leading boundary
+    if (typo_start > 0 && !is_printable_delimiter(typo_buffer[typo_start - 1])) {
+        return ZMK_EV_EVENT_BUBBLE;
     }
 
     char typo[AUTOCORRECT_MAX_LENGTH + 1] = {0};
@@ -647,9 +655,8 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
             break;
         }
     }
-    if (delim_last && kclen < (uint8_t)(AUTOCORRECT_MAX_LENGTH + 2)) {
-        kc_seq[kclen++] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
-    }
+    // No trailing boundary - corrections trigger immediately after last letter
+    // Dictionary entries have only a leading boundary now
     // Trie lookup using generated dictionary over KC sequence
     uint8_t backspaces = 0;
     const char *changes = NULL;
@@ -810,9 +817,7 @@ bool ac_lookup_typo_for_test(const uint8_t *buf, uint8_t size, uint8_t *out_back
             break;
         }
     }
-    if (delim_last && kclen < (uint8_t)(AUTOCORRECT_MAX_LENGTH + 2)) {
-        kc_seq[kclen++] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
-    }
+    // No trailing boundary in test helper either
     return trie_lookup_kc(kc_seq, kclen, out_backspaces, out_changes);
 }
 
@@ -830,4 +835,8 @@ bool autocorrect_dict_is_valid(void) {
 
 uint32_t autocorrect_get_lookup_count(void) {
     return lookup_count;
+}
+
+uint32_t autocorrect_get_correction_count(void) {
+    return correction_count;
 }
