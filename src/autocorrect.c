@@ -16,6 +16,7 @@
 #include <dt-bindings/zmk/hid_usage_pages.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/atomic.h>
+#include <zephyr/sys/printk.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
@@ -36,6 +37,7 @@ struct autocorrect_correction_work {
     uint8_t backspaces;
     const char *changes_ptr;
     char suffix_delim;
+    uint8_t typo_len_at_sched;
     atomic_t seq;
 };
 
@@ -257,6 +259,8 @@ static bool send_char(char c) {
 }
 
 // Map ASCII lowercase a-z to HID KC_A..KC_Z (4..29). Returns 0 on invalid.
+/* KC-based dictionary is the only active path. Keep any ASCII helpers disabled to avoid drift. */
+#if 0
 static inline uint8_t ascii_to_kc(char c) {
     if (c >= 'a' && c <= 'z') return (uint8_t)(HID_USAGE_KEY_KEYBOARD_A + (c - 'a'));
     return 0;
@@ -332,8 +336,20 @@ static void correction_work_handler(struct k_work *work) {
     struct k_work_delayable *dwork = k_work_delayable_from_work(work);
     struct autocorrect_correction_work *cw = CONTAINER_OF(dwork, struct autocorrect_correction_work, work);
 #if AUTOCORRECT_DEBUG
-    LOG_INF("Autocorrect: Executing correction seq=%ld backspaces=%u changes_ptr=%p",
-            (long)atomic_get(&cw->seq), cw->backspaces, cw->changes_ptr);
+    LOG_INF("Autocorrect: Execute seq=%ld raw_backspaces=%u typo_len_at_sched=%u suffix_delim='%c'",
+            (long)atomic_get(&cw->seq), cw->backspaces, cw->typo_len_at_sched,
+            cw->suffix_delim ? cw->suffix_delim : '.');
+    /* Hex dump of current buffer tail */
+    {
+        char dump[4 * (AUTOCORRECT_MAX_LENGTH + 2)] = {0};
+        int di = 0;
+        uint8_t start = (typo_buffer_size > (AUTOCORRECT_MAX_LENGTH + 2)) ? (typo_buffer_size - (AUTOCORRECT_MAX_LENGTH + 2)) : 0;
+        for (uint8_t i = start; i < typo_buffer_size && di < (int)sizeof(dump) - 4; ++i) {
+            di += snprintk(dump + di, sizeof(dump) - di, "%02X ", typo_buffer[i]);
+        }
+        LOG_INF("Autocorrect: Exec buffer tail [%s]", dump);
+    }
+    LOG_INF("Autocorrect: Validate buffer size=%u typo_len_at_sched=%u", typo_buffer_size, cw->typo_len_at_sched);
 #endif
     // Cancel if sequence advanced (buffer changed) since scheduling
     atomic_val_t current = atomic_get(&autocorrect_seq);
@@ -344,8 +360,17 @@ static void correction_work_handler(struct k_work *work) {
 #endif
         return;
     }
-    // Send backspaces
-    for (uint8_t i = 0; i < cw->backspaces; ++i) {
+    // Compute effective backspaces against the word length captured at schedule time
+    uint8_t eff_backspaces = cw->backspaces > cw->typo_len_at_sched ? cw->typo_len_at_sched : cw->backspaces;
+#if AUTOCORRECT_DEBUG
+    LOG_INF("Autocorrect: eff_backspaces=%u", eff_backspaces);
+#endif
+    // If there is a trailing delimiter, remove it first before deleting letters
+    if (cw->suffix_delim) {
+        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
+    }
+    // Send backspaces for letters only
+    for (uint8_t i = 0; i < eff_backspaces; ++i) {
         press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
     }
     // Send replacement changes directly from static dictionary
@@ -353,13 +378,22 @@ static void correction_work_handler(struct k_work *work) {
         for (int i = 0; cw->changes_ptr[i] != '\0'; i++) {
             (void)send_char(cw->changes_ptr[i]);
         }
+#if AUTOCORRECT_DEBUG
+        LOG_INF("Autocorrect: Changes sent, seq=%ld eff_backspaces=%u suffix_delim='%c'",
+                (long)atomic_get(&cw->seq), eff_backspaces, cw->suffix_delim ? cw->suffix_delim : '.');
+#endif
     }
-    // Send preserved trailing delimiter if any
+    // Retype preserved trailing delimiter if any
     if (cw->suffix_delim) {
         (void)send_char(cw->suffix_delim);
     }
     // Ensure no stuck keys/mods
     hid_clear_and_flush();
+    // Count only applied corrections (after changes sent)
+    correction_count++;
+    typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
+    typo_buffer_size = 1;
+    atomic_inc(&autocorrect_seq);
 }
 
 // ... (unchanged code)
@@ -655,7 +689,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     }
     typo[j] = '\0';
 
-    // Build KC sequence with boundary anchors
+    // Build KC sequence with boundary anchors (KC-based dictionary, leading boundary only)
     uint8_t kc_seq[AUTOCORRECT_MAX_LENGTH + 2] = {0};
     uint8_t kclen = 0;
     // prepend boundary if start-of-buffer or preceding char is delimiter
@@ -671,7 +705,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         }
     }
     // No trailing boundary - corrections trigger immediately after last letter
-    // Dictionary entries have only a leading boundary now
+    // Dictionary is KC-based with a leading boundary only
     // Trie lookup using generated dictionary over KC sequence
     uint8_t backspaces = 0;
     const char *changes = NULL;
@@ -691,18 +725,26 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
 
     if (matched && changes != NULL && apply_autocorrect(backspaces, changes, typo, correct)) {
 #if AUTOCORRECT_DEBUG
-        LOG_INF("Autocorrect: Match found backspaces=%u changes=\"%s\" kclen=%u",
-                backspaces, changes, kclen);
+        uint8_t eff_preview = backspaces > typo_len ? typo_len : backspaces;
+        LOG_INF("Autocorrect: Match backspaces=%u eff_preview=%u changes=\"%s\" kclen=%u typo_len=%u delim='%c'",
+                backspaces, eff_preview, changes, kclen, typo_len, suffix_delim ? suffix_delim : '.');
+        {
+            char dump[4 * (AUTOCORRECT_MAX_LENGTH + 2)] = {0};
+            int di = 0;
+            uint8_t start = (typo_buffer_size > (AUTOCORRECT_MAX_LENGTH + 2)) ? (typo_buffer_size - (AUTOCORRECT_MAX_LENGTH + 2)) : 0;
+            for (uint8_t i = start; i < typo_buffer_size && di < (int)sizeof(dump) - 4; ++i) {
+                di += snprintk(dump + di, sizeof(dump) - di, "%02X ", typo_buffer[i]);
+            }
+            LOG_INF("Autocorrect: Sched buffer tail [%s]", dump);
+        }
 #endif
-        uint8_t eff_backspaces = backspaces > typo_len ? typo_len : backspaces;
-        correction_work.backspaces = eff_backspaces;
+        // Schedule with raw backspaces; handler will compute eff_backspaces vs typo_len_at_sched
+        correction_work.backspaces = backspaces;
         correction_work.changes_ptr = changes;
         correction_work.suffix_delim = suffix_delim;
+        correction_work.typo_len_at_sched = typo_len;
         atomic_set(&correction_work.seq, atomic_get(&autocorrect_seq));
         int sched_result = k_work_schedule(&correction_work.work, K_MSEC(selected_work_delay_ms()));
-        if (sched_result >= 0) {
-            correction_count++;
-        }
 #if AUTOCORRECT_DEBUG
         {
             int wd = selected_work_delay_ms();
@@ -715,10 +757,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     }
 
     // Buffer maintenance: keep sliding window; only seed on space or after scheduling a correction
-    if (matched) {
-        typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
-        typo_buffer_size = 1;
-    } else if (usage8 == HID_USAGE_KEY_KEYBOARD_SPACEBAR) {
+    if (usage8 == HID_USAGE_KEY_KEYBOARD_SPACEBAR) {
         typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
         typo_buffer_size = 1;
         atomic_inc(&autocorrect_seq);

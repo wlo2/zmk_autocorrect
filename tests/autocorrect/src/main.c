@@ -21,6 +21,50 @@ static uint8_t usage_from_char(char c) {
     case '\'': return 0x34; // apostrophe
     default: return 0; // not covered
     }
+
+ZTEST(autocorrect_suite, test_delimiter_trigger_space_cosnt) {
+    // cosnt  -> const  (space triggers correction)
+    uint8_t buf[32]; uint8_t len;
+    to_usage_buf("cosnt ", buf, &len);
+    uint8_t backspaces = 0; const char *changes = NULL;
+    bool found = ac_lookup_typo_for_test(buf, len, &backspaces, &changes);
+    zassert_true(found, "expected dictionary match for 'cosnt '");
+    char out[32] = {0};
+    bool ok = ac_build_correct_for_test(buf, len, backspaces, changes, out, sizeof(out));
+    zassert_true(ok, "build failed");
+    zassert_equal(strcmp(out, "const "), 0, "expected 'const ', got '%s'", out);
+}
+
+ZTEST(autocorrect_suite, test_cancellation_on_append_printable) {
+    // A scheduled correction (e.g., 'teh ') should be invalidated if another printable is typed (-> 'teha')
+    uint8_t buf1[32]; uint8_t len1;
+    to_usage_buf("teh ", buf1, &len1);
+    uint8_t bs1 = 0; const char *chg1 = NULL;
+    bool found1 = ac_lookup_typo_for_test(buf1, len1, &bs1, &chg1);
+    zassert_true(found1, "expected match for 'teh '");
+
+    // Append a printable char; lookup should not match the previous correction anymore
+    uint8_t buf2[32]; uint8_t len2;
+    to_usage_buf("teha", buf2, &len2);
+    uint8_t bs2 = 0; const char *chg2 = NULL;
+    bool found2 = ac_lookup_typo_for_test(buf2, len2, &bs2, &chg2);
+    zassert_false(found2, "expected no match after appending 'a'");
+
+    // Ensure buffer would remain unchanged (no modification) when no correction applies
+    char out[32] = {0};
+    bool ok = ac_build_correct_for_test(buf2, len2, /*backspaces=*/0, /*changes=*/"", out, sizeof(out));
+    zassert_true(ok, "build failed");
+    zassert_equal(strcmp(out, "teha"), 0, "expected unchanged 'teha', got '%s'", out);
+}
+
+ZTEST(autocorrect_suite, test_lookup_without_trailing_delimiter) {
+    // Ensure matching can occur without a trailing delimiter
+    uint8_t buf[32]; uint8_t len;
+    to_usage_buf("looses", buf, &len);
+    uint8_t backspaces = 0; const char *changes = NULL;
+    bool found = ac_lookup_typo_for_test(buf, len, &backspaces, &changes);
+    zassert_true(found, "expected dictionary match without delimiter for 'looses'");
+    zassert_true(strncmp(changes, "loses", 6) == 0, "expected changes='loses'");
 }
 
 static void to_usage_buf(const char *s, uint8_t *buf, uint8_t *len) {
