@@ -1,4 +1,7 @@
 #include <zmk/endpoints.h>
+#if __has_include(<zmk/endpoints_types.h>)
+#include <zmk/endpoints_types.h>
+#endif
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/fs/nvs.h>

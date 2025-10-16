@@ -89,7 +89,7 @@ static int on_autocorrect_toggle_binding_pressed(struct zmk_behavior_binding *bi
         } else if (feedback == '0') {
             keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS);
         } else {
-            keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION + (feedback - '1'));
+            keycode = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION + (feedback - '1')));
         }
         autocorrect_set_suppress(true);
         press_and_release(keycode);
@@ -117,7 +117,7 @@ static int on_autocorrect_toggle_binding_pressed(struct zmk_behavior_binding *bi
         if (feedback == '0') {
             keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS);
         } else {
-            keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION + (feedback - '1'));
+            keycode = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION + (feedback - '1')));
         }
         autocorrect_set_suppress(true);
         press_and_release(keycode);
@@ -133,7 +133,7 @@ static int on_autocorrect_toggle_binding_pressed(struct zmk_behavior_binding *bi
         if (feedback == '0') {
             keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS);
         } else {
-            keycode = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION + (feedback - '1'));
+            keycode = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION + (feedback - '1')));
         }
         autocorrect_set_suppress(true);
         press_and_release(keycode);
