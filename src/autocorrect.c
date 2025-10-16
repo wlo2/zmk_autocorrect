@@ -1,7 +1,5 @@
 #include <zmk/endpoints.h>
-#if __has_include(<zmk/endpoints_types.h>)
 #include <zmk/endpoints_types.h>
-#endif
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/fs/nvs.h>
@@ -174,7 +172,7 @@ static inline int selected_delay_ms(void) {
 
 static inline int selected_work_delay_ms(void) {
     int d = CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS;
-#if defined(CONFIG_BT) && defined(CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS)
+#if defined(CONFIG_BT)
     /* Prefer BLE-specific work delay when BLE is the active endpoint and a value is provided */
     if (CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS > 0) {
         enum zmk_endpoint sel = zmk_endpoints_selected();
