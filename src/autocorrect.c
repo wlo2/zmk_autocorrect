@@ -175,8 +175,8 @@ static inline int selected_work_delay_ms(void) {
 #if defined(CONFIG_BT)
     /* Prefer BLE-specific work delay when BLE is the active endpoint and a value is provided */
     if (CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS > 0) {
-        int sel = zmk_endpoints_selected();
-        if (sel == ZMK_ENDPOINT_BLE) {
+        struct zmk_endpoint_instance sel = zmk_endpoints_selected();
+        if (sel.transport == ZMK_TRANSPORT_BLE) {
             d = CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS;
         }
     }
@@ -706,15 +706,10 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
 #if AUTOCORRECT_DEBUG
         {
             int wd = selected_work_delay_ms();
-            const char *ep = "unknown";
-#if defined(CONFIG_USB_DEVICE_STACK)
-            if (zmk_endpoints_selected() == ZMK_ENDPOINT_USB) { ep = "USB"; }
-#endif
-#if defined(CONFIG_BT)
-            if (zmk_endpoints_selected() == ZMK_ENDPOINT_BLE) { ep = "BLE"; }
-#endif
+            char epbuf[16] = {0};
+            zmk_endpoint_instance_to_str(zmk_endpoints_selected(), epbuf, sizeof(epbuf));
             LOG_INF("Autocorrect: Scheduled work seq=%ld delay_ms=%d endpoint=%s result=%d",
-                    (long)atomic_get(&correction_work.seq), wd, ep, sched_result);
+                    (long)atomic_get(&correction_work.seq), wd, epbuf, sched_result);
         }
 #endif
     }
