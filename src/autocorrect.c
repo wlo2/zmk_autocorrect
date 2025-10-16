@@ -175,7 +175,7 @@ static inline int selected_work_delay_ms(void) {
 #if defined(CONFIG_BT)
     /* Prefer BLE-specific work delay when BLE is the active endpoint and a value is provided */
     if (CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS > 0) {
-        enum zmk_endpoint sel = zmk_endpoints_selected();
+        int sel = zmk_endpoints_selected();
         if (sel == ZMK_ENDPOINT_BLE) {
             d = CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS;
         }
