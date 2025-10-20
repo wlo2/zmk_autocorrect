@@ -66,6 +66,13 @@ static inline bool is_modifier_usage(uint8_t usage) {
     return usage >= HID_USAGE_KEY_KEYBOARD_LEFTCONTROL && usage <= HID_USAGE_KEY_KEYBOARD_RIGHT_GUI;
 }
 
+// Lookup helpers (KC-based only)
+// KC-based traversal is the sole supported path. ASCII helpers were removed to avoid drift.
+// See tools/README.md and README.md for the KC format and generator expectations.
+#if defined(TRIE_LOOKUP_ASCII)
+#error "ASCII-based lookup is not supported. Use trie_lookup_kc() and KC-based dictionaries."
+#endif
+
 // KC-based traversal: compares raw 6-bit node keys to HID usage codes (e.g., 0x04..0x1D for A..Z, 0x2C for boundary)
 static bool trie_lookup_kc(const uint8_t *kc_seq, uint8_t len, uint8_t *out_backspaces, const char **out_changes) {
     if (!kc_seq || len == 0 || !out_backspaces || !out_changes) return false;
@@ -255,80 +262,6 @@ static bool send_char(char c) {
         return true;
     default:
         return false;
-    }
-}
-
-// Map ASCII lowercase a-z to HID KC_A..KC_Z (4..29). Returns 0 on invalid.
-/* KC-based dictionary is the only active path. Keep any ASCII helpers disabled to avoid drift. */
-#if 0
-static inline uint8_t ascii_to_kc(char c) {
-    if (c >= 'a' && c <= 'z') return (uint8_t)(HID_USAGE_KEY_KEYBOARD_A + (c - 'a'));
-    return 0;
-}
-
-// QMK-compatible traversal over serialized trie in autocorrect_data
-// On success, sets out_backspaces and out_changes (pointer into autocorrect_data string)
-static __maybe_unused bool trie_lookup(const char *typo, uint8_t len, uint8_t *out_backspaces, const char **out_changes) {
-    if (!typo || len == 0 || !out_backspaces || !out_changes) return false;
-    uint16_t state = 0; // byte offset into autocorrect_data
-    uint8_t pos = 0;
-
-    while (1) {
-        uint8_t b = autocorrect_data[state];
-        uint8_t node_type = b & 0xC0; // 00=chain, 01=branch, 10=leaf
-
-        if (node_type == 0x80) { // leaf
-            if (pos != len) {
-                return false; // reached leaf before consuming all input
-            }
-            uint8_t backspaces = (uint8_t)(b & 0x7F);
-            const char *rep = (const char *)&autocorrect_data[state + 1];
-            *out_backspaces = backspaces;
-            *out_changes = rep;
-            return true;
-        } else if (node_type == 0x40) { // branch
-            if (pos >= len) {
-                return false; // need more input to choose a branch
-            }
-            uint8_t want = ascii_to_kc(typo[pos]);
-            if (want == 0) return false;
-            uint16_t idx = state;
-            bool matched = false;
-            while (1) {
-                uint8_t key = autocorrect_data[idx] & 0x3F; // strip type bits
-                if (key == 0) break; // end of branches
-                uint16_t link = (uint16_t)autocorrect_data[idx + 1] | ((uint16_t)autocorrect_data[idx + 2] << 8);
-                if (key == want) {
-                    state = link;
-                    pos++;
-                    matched = true;
-                    break;
-                }
-                idx += 3;
-            }
-            if (!matched) return false;
-            continue;
-        } else { // chain (top bits 00)
-            uint16_t idx = state;
-            while (1) {
-                uint8_t key = autocorrect_data[idx];
-                if (key == 0) {
-                    // move to child node encoded immediately after chain
-                    state = idx + 1;
-                    break;
-                }
-                if (pos >= len) {
-                    return false; // input shorter than chain
-                }
-                uint8_t want = ascii_to_kc(typo[pos]);
-                if (want == 0 || want != key) {
-                    return false; // mismatch in chain
-                }
-                pos++;
-                idx++;
-            }
-            continue;
-        }
     }
 }
 

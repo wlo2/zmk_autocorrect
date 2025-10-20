@@ -197,6 +197,8 @@ The autocorrect engine traverses the dictionary using HID Keyboard usages (KC-ba
 
 - The lookup uses keyboard usage codes for `A..Z`, digits, and treats space/comma/period/minus/quote as delimiters.
 - Boundary markers now use only a leading space keycode, enabling immediate corrections without a trailing delimiter.
+- ASCII-based helpers and traversal were removed to avoid drift. Only the KC-based path is supported and compiled.
+- Defining `TRIE_LOOKUP_ASCII` is explicitly rejected at compile time.
 
 ## Tradeoffs and Limitations
 
