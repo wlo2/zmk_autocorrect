@@ -671,6 +671,10 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
             LOG_INF("Autocorrect: Sched buffer tail [%s]", dump);
         }
 #endif
+        // Freeze buffer and increment sequence before scheduling
+        typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
+        typo_buffer_size = 1;
+        atomic_inc(&autocorrect_seq);
         // Schedule with raw backspaces; handler will compute eff_backspaces vs typo_len_at_sched
         correction_work.backspaces = backspaces;
         correction_work.changes_ptr = changes;
