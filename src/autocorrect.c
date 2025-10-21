@@ -677,14 +677,14 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         correction_work.suffix_delim = suffix_delim;
         correction_work.typo_len_at_sched = typo_len;
         atomic_set(&correction_work.seq, atomic_get(&autocorrect_seq));
-        int sched_result = k_work_schedule(&correction_work.work, K_MSEC(selected_work_delay_ms()));
+        (void)k_work_schedule(&correction_work.work, K_MSEC(selected_work_delay_ms()));
 #if AUTOCORRECT_DEBUG
         {
             int wd = selected_work_delay_ms();
             char epbuf[16] = {0};
             zmk_endpoint_instance_to_str(zmk_endpoints_selected(), epbuf, sizeof(epbuf));
-            LOG_INF("Autocorrect: Scheduled work seq=%ld delay_ms=%d endpoint=%s result=%d",
-                    (long)atomic_get(&correction_work.seq), wd, epbuf, sched_result);
+            LOG_INF("Autocorrect: Scheduled work seq=%ld delay_ms=%d endpoint=%s",
+                    (long)atomic_get(&correction_work.seq), wd, epbuf);
         }
 #endif
     }

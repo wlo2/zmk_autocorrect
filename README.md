@@ -16,8 +16,8 @@ This module adds an autocorrect feature to ZMK, similar to the one found in QMK.
 - **Timing configs**:
   - `CONFIG_ZMK_AUTOCORRECT_DELAY_MS=35` (BLE-friendly per-key delay)
   - `CONFIG_ZMK_AUTOCORRECT_FAST_USB_MS=15` (optional lower per-key delay when USB is active; only when `CONFIG_USB_DEVICE_STACK` is enabled)
-  - `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS=100` (default delay before correction starts)
-  - `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS=150` (optional BLE-specific work delay when `CONFIG_BT` is enabled)
+  - `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS=150` (default delay before correction starts)
+  - `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS=200` (optional BLE-specific work delay when `CONFIG_BT` is enabled)
 
 ### Work Delay Configuration (Critical for Immediate Corrections)
 
@@ -26,9 +26,9 @@ This module adds an autocorrect feature to ZMK, similar to the one found in QMK.
 - **Why it matters**: For immediate corrections (no trailing delimiter), the last typed character's HID report is sent after scheduling. The work delay must be long enough for that last report to reach and be processed by the host before backspaces begin.
 - **Recommended values**:
   - USB: 50–75 ms
-  - Bluetooth (BLE): 100–150 ms
-  - Default: 100 ms (safe for both)
-- **Troubleshooting**: If corrections are missing the last character (e.g., `becuase` → `becuas`), increase the work delay in 50 ms steps.
+  - Bluetooth (BLE): 150–200 ms
+  - Default: 150 ms (safe for both)
+- **Troubleshooting**: If corrections are missing the last character (e.g., `becuase` → `becuas`), start with 150ms and increase in 50 ms steps if needed.
 
 ### Configuration for Split Keyboards
 
@@ -42,8 +42,8 @@ Example (BLE-focused):
 CONFIG_ZMK_AUTOCORRECT=y
 CONFIG_ZMK_BEHAVIORS_QUEUE_SIZE=128
 CONFIG_ZMK_AUTOCORRECT_DELAY_MS=35
-CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS=100
-CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS=150
+CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS=150
+CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS=200
 ```
 
 Example (USB-focused):
@@ -66,7 +66,7 @@ CONFIG_ZMK_HID_SEPARATE_MOD_RELEASE_REPORT=y
 Autocorrect monitors your typing and maintains a buffer of recent characters.  
 When you type the last character of a typo in the dictionary, autocorrect:
 - Detects the match immediately.
-- Queues a correction with a small delay (default 100ms via `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS`) to let the current key complete.
+- Queues a correction with a small delay (default 150ms via `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS`) to let the current key complete.
 - Sends backspaces to erase the typo.
 - Types the correct word.
 
@@ -76,7 +76,7 @@ There's a small delay between each synthetic keypress for reliability, especiall
 
 - **Event order**: keypress → autocorrect listener detects match → HID sends the last key → work delay elapses → correction executes.
 - **Race risk**: If the work delay is too short, backspaces can begin before the host has processed the last character, resulting in a missing character in the output.
-- **Fix**: Use sufficient work delay. Typical guidance: USB 50–75 ms, BLE 100–150 ms. Default is 100 ms.
+- **Fix**: Use sufficient work delay. Typical guidance: USB 50–75 ms, BLE 150–200 ms. Default is 150 ms.
 
 ## Troubleshooting
 
@@ -102,7 +102,7 @@ There's a small delay between each synthetic keypress for reliability, especiall
 
 ### Timing Adjustments
 
-If corrections are incomplete (missing the last character), increase `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS` (e.g., 100 → 150 ms). If fast typing cancels corrections, you can also increase the work delay slightly. Total correction time ≈ work_delay + (backspaces × key_delay) + (replacement_chars × key_delay). Do not go below ~50 ms on USB or ~100 ms on BLE.
+If corrections are incomplete (missing the last character), increase `CONFIG_ZMK_AUTOCORRECT_WORK_DELAY_MS` (e.g., 150 → 200 ms). If fast typing cancels corrections, you can also increase the work delay slightly. Total correction time ≈ work_delay + (backspaces × key_delay) + (replacement_chars × key_delay). Do not go below ~50 ms on USB or ~150 ms on BLE.
 
 ### Systematic Diagnosis (Without Console Logging)
 
