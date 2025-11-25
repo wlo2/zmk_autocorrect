@@ -220,6 +220,73 @@ void hid_clear_and_flush(void) {
     zmk_endpoints_send_report(HID_USAGE_KEY);
 }
 
+static void safe_send_report(void) {
+    // Simple bounded retry to avoid indefinite waits
+    for (int i = 0; i < 2; i++) {
+        zmk_endpoints_send_report(HID_USAGE_KEY);
+        k_sleep(K_MSEC(1));
+    }
+}
+
+void press_and_release(zmk_key_t usage) {
+    zmk_hid_keyboard_press(usage);
+    safe_send_report();
+    k_sleep(K_MSEC(selected_delay_ms()));
+    zmk_hid_keyboard_release(usage);
+    safe_send_report();
+    k_sleep(K_MSEC(selected_delay_ms()));
+}
+
+static bool send_char(char c) {
+    // Map common ASCII to HID usages; returns false if unsupported
+    if (c >= 'a' && c <= 'z') {
+        zmk_key_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'a')));
+        press_and_release(kc);
+        return true;
+    }
+    if (c >= 'A' && c <= 'Z') {
+        zmk_key_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'A')));
+        zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFTSHIFT));
+        safe_send_report();
+        k_sleep(K_MSEC(selected_delay_ms()));
+        press_and_release(kc);
+        zmk_hid_keyboard_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFTSHIFT));
+        safe_send_report();
+        k_sleep(K_MSEC(selected_delay_ms()));
+        return true;
+    }
+    if (c >= '1' && c <= '9') {
+        uint16_t base = HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION;
+        zmk_key_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, (base + (c - '1')));
+        press_and_release(kc);
+        return true;
+    }
+    if (c == '0') {
+        zmk_key_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS));
+        press_and_release(kc);
+        return true;
+    }
+    switch (c) {
+    case ' ':
+        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR));
+        return true;
+    case ',':
+        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_COMMA_AND_LESS_THAN));
+        return true;
+    case '.':
+        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_PERIOD_AND_GREATER_THAN));
+        return true;
+    case '-':
+        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE));
+        return true;
+    case '\'':
+        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_APOSTROPHE_AND_QUOTE));
+        return true;
+    default:
+        return false;
+    }
+}
+
 static bool get_key_for_char(char c, zmk_key_t *key, zmk_key_t *mod) {
     *mod = 0;
     if (c >= 'a' && c <= 'z') {
@@ -282,6 +349,11 @@ static void correction_work_handler(struct k_work *work) {
     int delay = selected_delay_ms();
 
     switch (cw->state) {
+    case AUTOCORRECT_STATE_IDLE:
+        // Should not happen if scheduled correctly
+        reschedule = false;
+        break;
+
     case AUTOCORRECT_STATE_BACKSPACE_SUFFIX:
         if (cw->suffix_delim) {
             zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
