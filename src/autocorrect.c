@@ -219,6 +219,7 @@ static inline int selected_work_delay_ms(void) {
 void hid_clear_and_flush(void) {
     zmk_hid_keyboard_clear();
     zmk_endpoints_send_report(HID_USAGE_KEY);
+    zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
 }
 
 static void safe_send_report(void) {
@@ -338,6 +339,7 @@ static void correction_work_handler(struct k_work *work) {
     if (current != atomic_get(&cw->seq)) {
         cw->state = AUTOCORRECT_STATE_IDLE;
         atomic_set(&autocorrect_active, 0);
+        hid_clear_and_flush(); // Ensure no keys are left stuck
         return;
     }
 
@@ -362,11 +364,13 @@ static void correction_work_handler(struct k_work *work) {
             if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_PRESS) {
                 zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
                 zmk_endpoints_send_report(HID_USAGE_KEY);
+                zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
                 cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_RELEASE;
                 cw->current_key = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE);
             } else {
                 zmk_hid_keyboard_release(cw->current_key);
                 zmk_endpoints_send_report(HID_USAGE_KEY);
+                zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
                 cw->state = AUTOCORRECT_STATE_BACKSPACE_LETTERS;
                 cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
                 cw->index = 0;
@@ -387,10 +391,12 @@ static void correction_work_handler(struct k_work *work) {
                 if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_PRESS) {
                     zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
                     zmk_endpoints_send_report(HID_USAGE_KEY);
+                    zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
                     cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_RELEASE;
                 } else {
                     zmk_hid_keyboard_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
                     zmk_endpoints_send_report(HID_USAGE_KEY);
+                    zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
                     cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
                     cw->index++;
                 }
@@ -411,6 +417,7 @@ static void correction_work_handler(struct k_work *work) {
                 if (cw->current_mod) {
                     zmk_hid_keyboard_press(cw->current_mod);
                     zmk_endpoints_send_report(HID_USAGE_KEY);
+                    zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
                 } else {
                     delay = 0;
                 }
@@ -418,15 +425,18 @@ static void correction_work_handler(struct k_work *work) {
             } else if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_PRESS) {
                 zmk_hid_keyboard_press(cw->current_key);
                 zmk_endpoints_send_report(HID_USAGE_KEY);
+                zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
                 cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_RELEASE;
             } else if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_RELEASE) {
                 zmk_hid_keyboard_release(cw->current_key);
                 zmk_endpoints_send_report(HID_USAGE_KEY);
+                zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
                 cw->sub_state = AUTOCORRECT_SUB_STATE_MOD_RELEASE;
             } else if (cw->sub_state == AUTOCORRECT_SUB_STATE_MOD_RELEASE) {
                 if (cw->current_mod) {
                     zmk_hid_keyboard_release(cw->current_mod);
                     zmk_endpoints_send_report(HID_USAGE_KEY);
+                    zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
                 } else {
                     delay = 0;
                 }
@@ -447,11 +457,13 @@ static void correction_work_handler(struct k_work *work) {
                 get_key_for_char(cw->suffix_delim, &key, &mod);
                 zmk_hid_keyboard_press(key);
                 zmk_endpoints_send_report(HID_USAGE_KEY);
+                zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
                 cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_RELEASE;
                 cw->current_key = key;
             } else {
                 zmk_hid_keyboard_release(cw->current_key);
                 zmk_endpoints_send_report(HID_USAGE_KEY);
+                zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
                 cw->state = AUTOCORRECT_STATE_IDLE;
                 reschedule = false;
             }
@@ -464,6 +476,7 @@ static void correction_work_handler(struct k_work *work) {
 
     if (cw->state == AUTOCORRECT_STATE_IDLE) {
         // Finish up
+        hid_clear_and_flush(); // Ensure clean state
         correction_count++;
         typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
         typo_buffer_size = 1;
