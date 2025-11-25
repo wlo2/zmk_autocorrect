@@ -1,4 +1,6 @@
 # ZMK Autocorrect Module
+> [!WARNING]
+> Not yet functional. Logic for detection of the typos is working, correction is not.
 
 This module adds an autocorrect feature to ZMK, similar to the one found in QMK.
 
