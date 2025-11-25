@@ -32,6 +32,21 @@ static bool autocorrect_enabled = true; // Default state (cached)
 
 static atomic_t autocorrect_suppressed = ATOMIC_INIT(0); // Diagnostics/event suppression flag
 
+enum autocorrect_state {
+    AUTOCORRECT_STATE_IDLE,
+    AUTOCORRECT_STATE_BACKSPACE_SUFFIX,
+    AUTOCORRECT_STATE_BACKSPACE_LETTERS,
+    AUTOCORRECT_STATE_TYPE_CHARS,
+    AUTOCORRECT_STATE_TYPE_SUFFIX,
+};
+
+enum autocorrect_sub_state {
+    AUTOCORRECT_SUB_STATE_MOD_PRESS,
+    AUTOCORRECT_SUB_STATE_KEY_PRESS,
+    AUTOCORRECT_SUB_STATE_KEY_RELEASE,
+    AUTOCORRECT_SUB_STATE_MOD_RELEASE,
+};
+
 struct autocorrect_correction_work {
     struct k_work_delayable work;
     uint8_t backspaces;
@@ -39,6 +54,13 @@ struct autocorrect_correction_work {
     char suffix_delim;
     uint8_t typo_len_at_sched;
     atomic_t seq;
+
+    // State machine context
+    enum autocorrect_state state;
+    enum autocorrect_sub_state sub_state;
+    int index;
+    zmk_key_t current_key;
+    zmk_key_t current_mod;
 };
 
 static struct autocorrect_correction_work correction_work;
@@ -198,67 +220,41 @@ void hid_clear_and_flush(void) {
     zmk_endpoints_send_report(HID_USAGE_KEY);
 }
 
-static void safe_send_report(void) {
-    // Simple bounded retry to avoid indefinite waits
-    for (int i = 0; i < 2; i++) {
-        zmk_endpoints_send_report(HID_USAGE_KEY);
-        k_sleep(K_MSEC(1));
-    }
-}
-
-void press_and_release(zmk_key_t usage) {
-    zmk_hid_keyboard_press(usage);
-    safe_send_report();
-    k_sleep(K_MSEC(selected_delay_ms()));
-    zmk_hid_keyboard_release(usage);
-    safe_send_report();
-    k_sleep(K_MSEC(selected_delay_ms()));
-}
-
-static bool send_char(char c) {
-    // Map common ASCII to HID usages; returns false if unsupported
+static bool get_key_for_char(char c, zmk_key_t *key, zmk_key_t *mod) {
+    *mod = 0;
     if (c >= 'a' && c <= 'z') {
-        zmk_key_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'a')));
-        press_and_release(kc);
+        *key = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'a')));
         return true;
     }
     if (c >= 'A' && c <= 'Z') {
-        zmk_key_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'A')));
-        zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFTSHIFT));
-        safe_send_report();
-        k_sleep(K_MSEC(selected_delay_ms()));
-        press_and_release(kc);
-        zmk_hid_keyboard_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFTSHIFT));
-        safe_send_report();
-        k_sleep(K_MSEC(selected_delay_ms()));
+        *key = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_A + (c - 'A')));
+        *mod = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFTSHIFT);
         return true;
     }
     if (c >= '1' && c <= '9') {
         uint16_t base = HID_USAGE_KEY_KEYBOARD_1_AND_EXCLAMATION;
-        zmk_key_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, (base + (c - '1')));
-        press_and_release(kc);
+        *key = ZMK_HID_USAGE(HID_USAGE_KEY, (base + (c - '1')));
         return true;
     }
     if (c == '0') {
-        zmk_key_t kc = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS));
-        press_and_release(kc);
+        *key = ZMK_HID_USAGE(HID_USAGE_KEY, (HID_USAGE_KEY_KEYBOARD_0_AND_RIGHT_PARENTHESIS));
         return true;
     }
     switch (c) {
     case ' ':
-        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR));
+        *key = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_SPACEBAR);
         return true;
     case ',':
-        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_COMMA_AND_LESS_THAN));
+        *key = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_COMMA_AND_LESS_THAN);
         return true;
     case '.':
-        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_PERIOD_AND_GREATER_THAN));
+        *key = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_PERIOD_AND_GREATER_THAN);
         return true;
     case '-':
-        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE));
+        *key = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE);
         return true;
     case '\'':
-        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_APOSTROPHE_AND_QUOTE));
+        *key = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_APOSTROPHE_AND_QUOTE);
         return true;
     default:
         return false;
@@ -268,65 +264,133 @@ static bool send_char(char c) {
 static void correction_work_handler(struct k_work *work) {
     struct k_work_delayable *dwork = k_work_delayable_from_work(work);
     struct autocorrect_correction_work *cw = CONTAINER_OF(dwork, struct autocorrect_correction_work, work);
-#if AUTOCORRECT_DEBUG
-    LOG_INF("Autocorrect: Execute seq=%ld raw_backspaces=%u typo_len_at_sched=%u suffix_delim='%c'",
-            (long)atomic_get(&cw->seq), cw->backspaces, cw->typo_len_at_sched,
-            cw->suffix_delim ? cw->suffix_delim : '.');
-    /* Hex dump of current buffer tail */
-    {
-        char dump[4 * (AUTOCORRECT_MAX_LENGTH + 2)] = {0};
-        int di = 0;
-        uint8_t start = (typo_buffer_size > (AUTOCORRECT_MAX_LENGTH + 2)) ? (typo_buffer_size - (AUTOCORRECT_MAX_LENGTH + 2)) : 0;
-        for (uint8_t i = start; i < typo_buffer_size && di < (int)sizeof(dump) - 4; ++i) {
-            di += snprintk(dump + di, sizeof(dump) - di, "%02X ", typo_buffer[i]);
-        }
-        LOG_INF("Autocorrect: Exec buffer tail [%s]", dump);
-    }
-    LOG_INF("Autocorrect: Validate buffer size=%u typo_len_at_sched=%u", typo_buffer_size, cw->typo_len_at_sched);
-#endif
+
     // Cancel if sequence advanced (buffer changed) since scheduling
     atomic_val_t current = atomic_get(&autocorrect_seq);
     if (current != atomic_get(&cw->seq)) {
-#if AUTOCORRECT_DEBUG
-        LOG_INF("Autocorrect: Sequence advanced (now=%ld scheduled=%ld), cancel correction",
-                (long)current, (long)atomic_get(&cw->seq));
-#endif
+        cw->state = AUTOCORRECT_STATE_IDLE;
         return;
     }
-    // Compute effective backspaces against the word length captured at schedule time
-    uint8_t eff_backspaces = cw->backspaces > cw->typo_len_at_sched ? cw->typo_len_at_sched : cw->backspaces;
-#if AUTOCORRECT_DEBUG
-    LOG_INF("Autocorrect: eff_backspaces=%u", eff_backspaces);
-#endif
-    // If there is a trailing delimiter, remove it first before deleting letters
-    if (cw->suffix_delim) {
-        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
+
+    if (cw->state == AUTOCORRECT_STATE_IDLE) {
+        // Should not happen if scheduled correctly
+        return;
     }
-    // Send backspaces for letters only
-    for (uint8_t i = 0; i < eff_backspaces; ++i) {
-        press_and_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
-    }
-    // Send replacement changes directly from static dictionary
-    if (cw->changes_ptr) {
-        for (int i = 0; cw->changes_ptr[i] != '\0'; i++) {
-            (void)send_char(cw->changes_ptr[i]);
+
+    // Process current state
+    bool reschedule = true;
+    int delay = selected_delay_ms();
+
+    switch (cw->state) {
+    case AUTOCORRECT_STATE_BACKSPACE_SUFFIX:
+        if (cw->suffix_delim) {
+            zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
+            zmk_endpoints_send_report(HID_USAGE_KEY);
+            cw->state = AUTOCORRECT_STATE_BACKSPACE_LETTERS; // Transition immediately to next step logic
+            cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_RELEASE; // Next action is release
+            cw->current_key = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE);
+        } else {
+            cw->state = AUTOCORRECT_STATE_BACKSPACE_LETTERS;
+            cw->index = 0;
+            delay = 0; // No delay, run immediately
         }
-#if AUTOCORRECT_DEBUG
-        LOG_INF("Autocorrect: Changes sent, seq=%ld eff_backspaces=%u suffix_delim='%c'",
-                (long)atomic_get(&cw->seq), eff_backspaces, cw->suffix_delim ? cw->suffix_delim : '.');
-#endif
+        break;
+
+    case AUTOCORRECT_STATE_BACKSPACE_LETTERS:
+        // Compute effective backspaces against the word length captured at schedule time
+        {
+            uint8_t eff_backspaces = cw->backspaces > cw->typo_len_at_sched ? cw->typo_len_at_sched : cw->backspaces;
+            if (cw->index < eff_backspaces) {
+                if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_PRESS) {
+                    zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
+                    zmk_endpoints_send_report(HID_USAGE_KEY);
+                    cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_RELEASE;
+                } else {
+                    zmk_hid_keyboard_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
+                    zmk_endpoints_send_report(HID_USAGE_KEY);
+                    cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
+                    cw->index++;
+                }
+            } else {
+                cw->state = AUTOCORRECT_STATE_TYPE_CHARS;
+                cw->index = 0;
+                cw->sub_state = AUTOCORRECT_SUB_STATE_MOD_PRESS;
+                delay = 0;
+            }
+        }
+        break;
+
+    case AUTOCORRECT_STATE_TYPE_CHARS:
+        if (cw->changes_ptr && cw->changes_ptr[cw->index] != '\0') {
+            char c = cw->changes_ptr[cw->index];
+            if (cw->sub_state == AUTOCORRECT_SUB_STATE_MOD_PRESS) {
+                get_key_for_char(c, &cw->current_key, &cw->current_mod);
+                if (cw->current_mod) {
+                    zmk_hid_keyboard_press(cw->current_mod);
+                    zmk_endpoints_send_report(HID_USAGE_KEY);
+                } else {
+                    delay = 0;
+                }
+                cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
+            } else if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_PRESS) {
+                zmk_hid_keyboard_press(cw->current_key);
+                zmk_endpoints_send_report(HID_USAGE_KEY);
+                cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_RELEASE;
+            } else if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_RELEASE) {
+                zmk_hid_keyboard_release(cw->current_key);
+                zmk_endpoints_send_report(HID_USAGE_KEY);
+                cw->sub_state = AUTOCORRECT_SUB_STATE_MOD_RELEASE;
+            } else if (cw->sub_state == AUTOCORRECT_SUB_STATE_MOD_RELEASE) {
+                if (cw->current_mod) {
+                    zmk_hid_keyboard_release(cw->current_mod);
+                    zmk_endpoints_send_report(HID_USAGE_KEY);
+                } else {
+                    delay = 0;
+                }
+                cw->sub_state = AUTOCORRECT_SUB_STATE_MOD_PRESS;
+                cw->index++;
+            }
+        } else {
+            cw->state = AUTOCORRECT_STATE_TYPE_SUFFIX;
+            cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
+            delay = 0;
+        }
+        break;
+
+    case AUTOCORRECT_STATE_TYPE_SUFFIX:
+        if (cw->suffix_delim) {
+            if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_PRESS) {
+                zmk_key_t key, mod;
+                get_key_for_char(cw->suffix_delim, &key, &mod);
+                zmk_hid_keyboard_press(key);
+                zmk_endpoints_send_report(HID_USAGE_KEY);
+                cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_RELEASE;
+                cw->current_key = key;
+            } else {
+                zmk_hid_keyboard_release(cw->current_key);
+                zmk_endpoints_send_report(HID_USAGE_KEY);
+                cw->state = AUTOCORRECT_STATE_IDLE;
+                reschedule = false;
+            }
+        } else {
+            cw->state = AUTOCORRECT_STATE_IDLE;
+            reschedule = false;
+        }
+        break;
     }
-    // Retype preserved trailing delimiter if any
-    if (cw->suffix_delim) {
-        (void)send_char(cw->suffix_delim);
+
+    if (cw->state == AUTOCORRECT_STATE_IDLE) {
+        // Finish up
+        correction_count++;
+        typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
+        typo_buffer_size = 1;
+        atomic_inc(&autocorrect_seq);
+        reschedule = false;
     }
-    // Ensure no stuck keys/mods
-    hid_clear_and_flush();
-    // Count only applied corrections (after changes sent)
-    correction_count++;
-    typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
-    typo_buffer_size = 1;
-    atomic_inc(&autocorrect_seq);
+
+    if (reschedule) {
+        k_work_reschedule(dwork, K_MSEC(delay));
+    }
 }
 
 // ... (unchanged code)
@@ -680,6 +744,12 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         correction_work.changes_ptr = changes;
         correction_work.suffix_delim = suffix_delim;
         correction_work.typo_len_at_sched = typo_len;
+        
+        // Initialize state machine
+        correction_work.state = AUTOCORRECT_STATE_BACKSPACE_SUFFIX;
+        correction_work.sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
+        correction_work.index = 0;
+
         atomic_set(&correction_work.seq, atomic_get(&autocorrect_seq));
         (void)k_work_schedule(&correction_work.work, K_MSEC(selected_work_delay_ms()));
 #if AUTOCORRECT_DEBUG
