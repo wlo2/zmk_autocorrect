@@ -355,12 +355,18 @@ static void correction_work_handler(struct k_work *work) {
     bool reschedule = true;
     int delay = selected_delay_ms();
 
+    // Ensure clean state at start of processing (only once per sequence)
+    if (cw->state == AUTOCORRECT_STATE_BACKSPACE_SUFFIX && cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_PRESS && cw->index == 0) {
+        hid_clear_and_flush();
+    }
+
     switch (cw->state) {
     case AUTOCORRECT_STATE_IDLE:
         // Should not happen if scheduled correctly
+        autocorrect_set_suppress(false);
+        atomic_set(&autocorrect_active, 0);
         reschedule = false;
         break;
-
     case AUTOCORRECT_STATE_BACKSPACE_SUFFIX:
         if (cw->suffix_delim) {
             if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_PRESS) {
@@ -386,9 +392,9 @@ static void correction_work_handler(struct k_work *work) {
         break;
 
     case AUTOCORRECT_STATE_BACKSPACE_LETTERS:
-        // Use typo length for backspaces to ensure whole word is replaced
+        // Use backspaces as countdown
         {
-            if (cw->index < cw->typo_len_at_sched) {
+            if (cw->backspaces > 0) {
                 if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_PRESS) {
                     zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
                     zmk_endpoints_send_report(HID_USAGE_KEY);
@@ -399,7 +405,7 @@ static void correction_work_handler(struct k_work *work) {
                     zmk_endpoints_send_report(HID_USAGE_KEY);
                     zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
                     cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
-                    cw->index++;
+                    cw->backspaces--;
                 }
             } else {
                 cw->state = AUTOCORRECT_STATE_TYPE_CHARS;
@@ -846,7 +852,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         typo_buffer_size = 1;
         atomic_inc(&autocorrect_seq);
         // Schedule with raw backspaces; handler will compute eff_backspaces vs typo_len_at_sched
-        correction_work.backspaces = backspaces;
+        correction_work.backspaces = typo_len; // Force use of typo_len
         correction_work.changes_ptr = changes;
         correction_work.suffix_delim = suffix_delim;
         correction_work.typo_len_at_sched = typo_len;
