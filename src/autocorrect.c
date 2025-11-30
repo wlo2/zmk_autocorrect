@@ -31,7 +31,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 static bool autocorrect_enabled = true; // Default state (cached)
 
 static atomic_t autocorrect_suppressed = ATOMIC_INIT(0); // Diagnostics/event suppression flag
-static atomic_t autocorrect_active = ATOMIC_INIT(0); // Internal flag to suppress events during correction
 
 enum autocorrect_state {
     AUTOCORRECT_STATE_IDLE,
@@ -338,8 +337,6 @@ static void correction_work_handler(struct k_work *work) {
     atomic_val_t current = atomic_get(&autocorrect_seq);
     if (current != atomic_get(&cw->seq)) {
         cw->state = AUTOCORRECT_STATE_IDLE;
-        autocorrect_set_suppress(false);
-        atomic_set(&autocorrect_active, 0);
         hid_clear_and_flush(); // Ensure no keys are left stuck
         return;
     }
@@ -363,22 +360,24 @@ static void correction_work_handler(struct k_work *work) {
     switch (cw->state) {
     case AUTOCORRECT_STATE_IDLE:
         // Should not happen if scheduled correctly
-        autocorrect_set_suppress(false);
-        atomic_set(&autocorrect_active, 0);
         reschedule = false;
         break;
     case AUTOCORRECT_STATE_BACKSPACE_SUFFIX:
         if (cw->suffix_delim) {
             if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_PRESS) {
+                autocorrect_set_suppress(true);
                 zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
                 zmk_endpoints_send_report(HID_USAGE_KEY);
                 zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
+                autocorrect_set_suppress(false);
                 cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_RELEASE;
                 cw->current_key = ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE);
             } else {
+                autocorrect_set_suppress(true);
                 zmk_hid_keyboard_release(cw->current_key);
                 zmk_endpoints_send_report(HID_USAGE_KEY);
                 zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
+                autocorrect_set_suppress(false);
                 cw->state = AUTOCORRECT_STATE_BACKSPACE_LETTERS;
                 cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
                 cw->index = 0;
@@ -396,14 +395,18 @@ static void correction_work_handler(struct k_work *work) {
         {
             if (cw->backspaces > 0) {
                 if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_PRESS) {
+                    autocorrect_set_suppress(true);
                     zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
                     zmk_endpoints_send_report(HID_USAGE_KEY);
                     zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
+                    autocorrect_set_suppress(false);
                     cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_RELEASE;
                 } else {
+                    autocorrect_set_suppress(true);
                     zmk_hid_keyboard_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
                     zmk_endpoints_send_report(HID_USAGE_KEY);
                     zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
+                    autocorrect_set_suppress(false);
                     cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
                     cw->backspaces--;
                 }
@@ -422,28 +425,36 @@ static void correction_work_handler(struct k_work *work) {
             if (cw->sub_state == AUTOCORRECT_SUB_STATE_MOD_PRESS) {
                 get_key_for_char(c, &cw->current_key, &cw->current_mod);
                 if (cw->current_mod) {
+                    autocorrect_set_suppress(true);
                     zmk_hid_keyboard_press(cw->current_mod);
                     zmk_endpoints_send_report(HID_USAGE_KEY);
                     zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
+                    autocorrect_set_suppress(false);
                 } else {
                     delay = 0;
                 }
                 cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
             } else if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_PRESS) {
+                autocorrect_set_suppress(true);
                 zmk_hid_keyboard_press(cw->current_key);
                 zmk_endpoints_send_report(HID_USAGE_KEY);
                 zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
+                autocorrect_set_suppress(false);
                 cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_RELEASE;
             } else if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_RELEASE) {
+                autocorrect_set_suppress(true);
                 zmk_hid_keyboard_release(cw->current_key);
                 zmk_endpoints_send_report(HID_USAGE_KEY);
                 zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
+                autocorrect_set_suppress(false);
                 cw->sub_state = AUTOCORRECT_SUB_STATE_MOD_RELEASE;
             } else if (cw->sub_state == AUTOCORRECT_SUB_STATE_MOD_RELEASE) {
                 if (cw->current_mod) {
+                    autocorrect_set_suppress(true);
                     zmk_hid_keyboard_release(cw->current_mod);
                     zmk_endpoints_send_report(HID_USAGE_KEY);
                     zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
+                    autocorrect_set_suppress(false);
                 } else {
                     delay = 0;
                 }
@@ -462,15 +473,19 @@ static void correction_work_handler(struct k_work *work) {
             if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_PRESS) {
                 zmk_key_t key, mod;
                 get_key_for_char(cw->suffix_delim, &key, &mod);
+                autocorrect_set_suppress(true);
                 zmk_hid_keyboard_press(key);
                 zmk_endpoints_send_report(HID_USAGE_KEY);
                 zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
+                autocorrect_set_suppress(false);
                 cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_RELEASE;
                 cw->current_key = key;
             } else {
+                autocorrect_set_suppress(true);
                 zmk_hid_keyboard_release(cw->current_key);
                 zmk_endpoints_send_report(HID_USAGE_KEY);
                 zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
+                autocorrect_set_suppress(false);
                 cw->state = AUTOCORRECT_STATE_IDLE;
                 reschedule = false;
             }
@@ -488,8 +503,6 @@ static void correction_work_handler(struct k_work *work) {
         typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
         typo_buffer_size = 1;
         atomic_inc(&autocorrect_seq);
-        autocorrect_set_suppress(false);
-        atomic_set(&autocorrect_active, 0);
         reschedule = false;
     }
 
@@ -588,8 +601,6 @@ void autocorrect_disable(void) {
     autocorrect_enabled = false;
     persist_enabled_state();
     k_work_cancel_delayable(&correction_work.work);
-    autocorrect_set_suppress(false);
-    atomic_set(&autocorrect_active, 0);
     typo_buffer_size = 0;
     atomic_inc(&autocorrect_seq);
 #if CONFIG_ZMK_AUTOCORRECT_TOGGLE_FEEDBACK
@@ -656,11 +667,6 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
 
     // Ignore all events while suppressed (e.g., during diagnostics typing)
     if (autocorrect_is_suppressed()) {
-        return ZMK_EV_EVENT_BUBBLE;
-    }
-
-    // Ignore events generated by the autocorrect itself
-    if (atomic_get(&autocorrect_active)) {
         return ZMK_EV_EVENT_BUBBLE;
     }
 
@@ -863,8 +869,6 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
         correction_work.index = 0;
 
         atomic_set(&correction_work.seq, atomic_get(&autocorrect_seq));
-        autocorrect_set_suppress(true);
-        atomic_set(&autocorrect_active, 1);
         (void)k_work_schedule(&correction_work.work, K_MSEC(selected_work_delay_ms()));
 #if AUTOCORRECT_DEBUG
         {
@@ -875,6 +879,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
                     (long)atomic_get(&correction_work.seq), wd, epbuf);
         }
 #endif
+        return ZMK_EV_EVENT_BUBBLE;
     }
 
     // Buffer maintenance: keep sliding window; only seed on space or after scheduling a correction
