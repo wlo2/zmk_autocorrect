@@ -343,8 +343,6 @@ static void correction_work_handler(struct k_work *work) {
 
     if (cw->state == AUTOCORRECT_STATE_IDLE) {
         // Should not happen if scheduled correctly
-        autocorrect_set_suppress(false);
-        atomic_set(&autocorrect_active, 0);
         return;
     }
 
