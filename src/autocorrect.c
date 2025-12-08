@@ -402,6 +402,10 @@ static void correction_work_handler(struct k_work *work) {
                     cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
                     cw->backspaces--;
                 }
+                // Enforce a minimum delay for backspacing to avoid host dropping packets
+                if (delay < 8) {
+                    delay = 8;
+                }
             } else {
                 cw->state = AUTOCORRECT_STATE_TYPE_CHARS;
                 cw->index = 0;
