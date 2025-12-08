@@ -488,6 +488,7 @@ static void correction_work_handler(struct k_work *work) {
         typo_buffer_size = 1;
         atomic_inc(&autocorrect_seq);
         reschedule = false;
+        autocorrect_set_suppress(false); // Critical: Unlock input processing
     }
 
     if (reschedule) {
