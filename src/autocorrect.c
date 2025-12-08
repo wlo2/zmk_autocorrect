@@ -66,6 +66,10 @@ struct autocorrect_correction_work {
 static struct autocorrect_correction_work correction_work;
 static atomic_t autocorrect_seq;
 
+// Forward declarations
+static void cancel_correction_work(void);
+void autocorrect_set_suppress(bool suppress);
+
 #define AUTOCORRECT_ENABLE_ID 1
 
 #if FIXED_PARTITION_EXISTS(storage)
