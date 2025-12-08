@@ -502,7 +502,7 @@ static void persist_enabled_state(void) {
 void autocorrect_enable(void) {
     autocorrect_enabled = true;
     persist_enabled_state();
-    k_work_cancel_delayable(&correction_work.work);
+    cancel_correction_work();
     typo_buffer_size = 1;
     typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
     atomic_inc(&autocorrect_seq);
@@ -515,7 +515,7 @@ void autocorrect_enable(void) {
 void autocorrect_disable(void) {
     autocorrect_enabled = false;
     persist_enabled_state();
-    k_work_cancel_delayable(&correction_work.work);
+    cancel_correction_work();
     typo_buffer_size = 0;
     atomic_inc(&autocorrect_seq);
 #if CONFIG_ZMK_AUTOCORRECT_TOGGLE_FEEDBACK
@@ -533,6 +533,11 @@ void autocorrect_toggle(void) {
     // Minimal optional feedback
     // send_string(autocorrect_enabled ? "on" : "off");
 #endif
+}
+
+static void cancel_correction_work(void) {
+    (void)k_work_cancel_delayable(&correction_work.work);
+    autocorrect_set_suppress(false);
 }
 
 void autocorrect_set_suppress(bool suppress) {
@@ -631,7 +636,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     }
     if (usage8 == HID_USAGE_KEY_KEYBOARD_RETURN_ENTER) {
         // Cancel any pending correction on delimiter
-        k_work_cancel_delayable(&correction_work.work);
+        cancel_correction_work();
         typo_buffer_size = 1;
         typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
         atomic_inc(&autocorrect_seq);
@@ -643,7 +648,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
 
     // Reset and ignore on non-printable or layer/behavior keys
     if (!is_printable_usage(usage8)) {
-        k_work_cancel_delayable(&correction_work.work);
+        cancel_correction_work();
         typo_buffer_size = 1;
         typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
         atomic_inc(&autocorrect_seq);
@@ -666,7 +671,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     if (is_printable_delimiter(usage8)) {
         last_delim_index = 0; // not tracking absolute stream; kept for future use
         // Cancel any pending work on new delimiter (space etc.)
-        k_work_cancel_delayable(&correction_work.work);
+        cancel_correction_work();
 #if AUTOCORRECT_DEBUG
         LOG_INF("Autocorrect: Printable delimiter 0x%02X seen, cancel pending work", usage8);
 #endif
