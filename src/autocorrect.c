@@ -820,43 +820,38 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
 
     if (matched && changes != NULL && apply_autocorrect(backspaces, changes, typo, correct)) {
 #if AUTOCORRECT_DEBUG
-        uint8_t eff_preview = backspaces > typo_len ? typo_len : backspaces;
-        LOG_INF("Autocorrect: Match backspaces=%u eff_preview=%u changes=\"%s\" kclen=%u typo_len=%u delim='%c'",
-                backspaces, eff_preview, changes, kclen, typo_len, suffix_delim ? suffix_delim : '.');
-        {
-            char dump[4 * (AUTOCORRECT_MAX_LENGTH + 2)] = {0};
-            int di = 0;
-            uint8_t start = (typo_buffer_size > (AUTOCORRECT_MAX_LENGTH + 2)) ? (typo_buffer_size - (AUTOCORRECT_MAX_LENGTH + 2)) : 0;
-            for (uint8_t i = start; i < typo_buffer_size && di < (int)sizeof(dump) - 4; ++i) {
-                di += snprintk(dump + di, sizeof(dump) - di, "%02X ", typo_buffer[i]);
-            }
-            LOG_INF("Autocorrect: Sched buffer tail [%s]", dump);
+    uint8_t eff_preview = backspaces > typo_len ? typo_len : backspaces;
+    LOG_INF("Autocorrect: Match backspaces=%u eff_preview=%u changes=\"%s\" kclen=%u typo_len=%u delim='%c'",
+            backspaces, eff_preview, changes, kclen, typo_len, suffix_delim ? suffix_delim : '.');
+    {
+        char dump[4 * (AUTOCORRECT_MAX_LENGTH + 2)] = {0};
+        int di = 0;
+        uint8_t start = (typo_buffer_size > (AUTOCORRECT_MAX_LENGTH + 2)) ? (typo_buffer_size - (AUTOCORRECT_MAX_LENGTH + 2)) : 0;
+        for (uint8_t i = start; i < typo_buffer_size && di < (int)sizeof(dump) - 4; ++i) {
+            di += snprintk(dump + di, sizeof(dump) - di, "%02X ", typo_buffer[i]);
         }
+        LOG_INF("Autocorrect: Sched buffer tail [%s]", dump);
+    }
 #endif
-        // Freeze buffer and increment sequence before scheduling
-        typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
-        typo_buffer_size = 1;
-        atomic_inc(&autocorrect_seq);
-        // Schedule with raw backspaces
-        // Force backspaces to be at least the length of the replacement to handle cases where typo_len is under-calculated
-        size_t changes_len = 0;
-        if (changes) {
-            changes_len = strlen(changes);
-        }
-        correction_work.backspaces = (typo_len > changes_len) ? typo_len : (uint8_t)changes_len;
-        
-        correction_work.changes_ptr = changes;
-        correction_work.suffix_delim = suffix_delim;
-        correction_work.typo_len_at_sched = typo_len;
-        
-        // Initialize state machine
-        correction_work.state = AUTOCORRECT_STATE_BACKSPACE_SUFFIX;
-        correction_work.sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
-        correction_work.index = 0;
+    // Freeze buffer and increment sequence before scheduling
+    typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
+    typo_buffer_size = 1;
+    atomic_inc(&autocorrect_seq);
+    // Schedule with actual backspaces from dictionary
+    correction_work.backspaces = backspaces;  // Use the value from dictionary lookup
+    
+    correction_work.changes_ptr = changes;
+    correction_work.suffix_delim = suffix_delim;
+    correction_work.typo_len_at_sched = typo_len;
+    
+    // Initialize state machine
+    correction_work.state = AUTOCORRECT_STATE_BACKSPACE_SUFFIX;
+    correction_work.sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
+    correction_work.index = 0;
 
-        atomic_set(&correction_work.seq, atomic_get(&autocorrect_seq));
-        autocorrect_set_suppress(true);
-        (void)k_work_schedule(&correction_work.work, K_MSEC(selected_work_delay_ms()));
+    atomic_set(&correction_work.seq, atomic_get(&autocorrect_seq));
+    autocorrect_set_suppress(true);
+    (void)k_work_schedule(&correction_work.work, K_MSEC(selected_work_delay_ms()));
 #if AUTOCORRECT_DEBUG
         {
             int wd = selected_work_delay_ms();
