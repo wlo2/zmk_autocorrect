@@ -387,31 +387,31 @@ static void correction_work_handler(struct k_work *work) {
         break;
 
     case AUTOCORRECT_STATE_BACKSPACE_LETTERS:
-        // Use backspaces as countdown
+        // Perform all backspaces synchronously to ensure reliability and timing
         {
-            if (cw->backspaces > 0) {
-                if (cw->sub_state == AUTOCORRECT_SUB_STATE_KEY_PRESS) {
-                    zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
-                    zmk_endpoints_send_report(HID_USAGE_KEY);
-                    zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
-                    cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_RELEASE;
-                } else {
-                    zmk_hid_keyboard_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
-                    zmk_endpoints_send_report(HID_USAGE_KEY);
-                    zmk_endpoints_send_report(HID_USAGE_KEY); // Retry for reliability
-                    cw->sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
-                    cw->backspaces--;
-                }
-                // Enforce a minimum delay for backspacing to avoid host dropping packets
-                if (delay < 8) {
-                    delay = 8;
-                }
-            } else {
-                cw->state = AUTOCORRECT_STATE_TYPE_CHARS;
-                cw->index = 0;
-                cw->sub_state = AUTOCORRECT_SUB_STATE_MOD_PRESS;
-                delay = 0;
+            int safe_delay = delay;
+            if (safe_delay < 10) safe_delay = 10; // Enforce minimum 10ms delay
+
+            while (cw->backspaces > 0) {
+                // Press
+                zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
+                zmk_endpoints_send_report(HID_USAGE_KEY);
+                // Busy wait or sleep - using sleep as we are in work thread
+                k_sleep(K_MSEC(safe_delay));
+
+                // Release
+                zmk_hid_keyboard_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
+                zmk_endpoints_send_report(HID_USAGE_KEY);
+                k_sleep(K_MSEC(safe_delay));
+
+                cw->backspaces--;
             }
+
+            // Transition directly to typing
+            cw->state = AUTOCORRECT_STATE_TYPE_CHARS;
+            cw->index = 0;
+            cw->sub_state = AUTOCORRECT_SUB_STATE_MOD_PRESS;
+            delay = 0; // Ready to type immediately
         }
         break;
 
