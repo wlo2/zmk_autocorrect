@@ -346,6 +346,9 @@ static void correction_work_handler(struct k_work *work) {
         return;
     }
 
+    // Suppress autocorrect processing while we emit synthetic key events
+    autocorrect_set_suppress(true);
+
     // Ensure we are in a clean state
     hid_clear_and_flush();
 
@@ -781,8 +784,9 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
     typo_buffer_size = 1;
     atomic_inc(&autocorrect_seq);
-    // Schedule with actual backspaces from dictionary
-    correction_work.backspaces = backspaces;  // Use the value from dictionary lookup
+    // Schedule with backspaces clamped to the actual typo length
+    uint8_t eff_backspaces = backspaces > typo_len ? typo_len : backspaces;
+    correction_work.backspaces = eff_backspaces;
     
     correction_work.changes_ptr = changes;
     correction_work.suffix_delim = suffix_delim;
@@ -794,7 +798,6 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     correction_work.index = 0;
 
     atomic_set(&correction_work.seq, atomic_get(&autocorrect_seq));
-    autocorrect_set_suppress(true);
     (void)k_work_schedule(&correction_work.work, K_MSEC(selected_work_delay_ms()));
 #if AUTOCORRECT_DEBUG
         {

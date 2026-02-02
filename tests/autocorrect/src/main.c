@@ -21,6 +21,7 @@ static uint8_t usage_from_char(char c) {
     case '\'': return 0x34; // apostrophe
     default: return 0; // not covered
     }
+}
 
 ZTEST(autocorrect_suite, test_delimiter_trigger_space_cosnt) {
     // cosnt  -> const  (space triggers correction)

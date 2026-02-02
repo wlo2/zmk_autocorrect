@@ -28,7 +28,7 @@ config ZMK_AUTOCORRECT_FAST_USB_MS
 
 config ZMK_AUTOCORRECT_WORK_DELAY_MS
     int "Autocorrect work queue delay (ms)"
-    default 100
+    default 150
     range 50 300
     help
       Delay in milliseconds between detecting a typo and starting the correction.
@@ -42,7 +42,7 @@ config ZMK_AUTOCORRECT_WORK_DELAY_MS
 
 config ZMK_AUTOCORRECT_WORK_DELAY_BLE_MS
     int "Autocorrect work queue delay (ms) for BLE"
-    default 0
+    default 200
     range 0 300
     depends on BT
     help
