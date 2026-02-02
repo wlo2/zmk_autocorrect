@@ -359,23 +359,26 @@ static void correction_work_handler(struct k_work *work) {
     // 1. Handle Suffix Backspace (if any)
     if (cw->suffix_delim) {
         zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
-        zmk_endpoints_send_report(HID_USAGE_KEY);
+        safe_send_report();
         k_sleep(K_MSEC(op_delay));
         zmk_hid_keyboard_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
-        zmk_endpoints_send_report(HID_USAGE_KEY);
+        safe_send_report();
         k_sleep(K_MSEC(op_delay));
     }
 
     // 2. Handle Main Backspaces
     while (cw->backspaces > 0) {
         zmk_hid_keyboard_press(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
-        zmk_endpoints_send_report(HID_USAGE_KEY);
+        safe_send_report();
         k_sleep(K_MSEC(op_delay));
         zmk_hid_keyboard_release(ZMK_HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_DELETE_BACKSPACE));
-        zmk_endpoints_send_report(HID_USAGE_KEY);
+        safe_send_report();
         k_sleep(K_MSEC(op_delay));
         cw->backspaces--;
     }
+
+    // Give the host time to apply backspaces before typing replacement text
+    k_sleep(K_MSEC(op_delay));
 
     // 3. Type Replacement Characters
     if (cw->changes_ptr) {
@@ -387,21 +390,21 @@ static void correction_work_handler(struct k_work *work) {
 
             if (mod) {
                 zmk_hid_keyboard_press(mod);
-                zmk_endpoints_send_report(HID_USAGE_KEY);
+                safe_send_report();
                 k_sleep(K_MSEC(op_delay));
             }
             
             zmk_hid_keyboard_press(key);
-            zmk_endpoints_send_report(HID_USAGE_KEY);
+            safe_send_report();
             k_sleep(K_MSEC(op_delay));
             
             zmk_hid_keyboard_release(key);
-            zmk_endpoints_send_report(HID_USAGE_KEY);
+            safe_send_report();
             k_sleep(K_MSEC(op_delay));
 
             if (mod) {
                 zmk_hid_keyboard_release(mod);
-                zmk_endpoints_send_report(HID_USAGE_KEY);
+                safe_send_report();
                 k_sleep(K_MSEC(op_delay));
             }
             idx++;
@@ -416,10 +419,10 @@ static void correction_work_handler(struct k_work *work) {
         // get_key_for_char handles standard punctuation.
         
         zmk_hid_keyboard_press(key);
-        zmk_endpoints_send_report(HID_USAGE_KEY);
+        safe_send_report();
         k_sleep(K_MSEC(op_delay));
         zmk_hid_keyboard_release(key);
-        zmk_endpoints_send_report(HID_USAGE_KEY);
+        safe_send_report();
         k_sleep(K_MSEC(op_delay));
     }
 
@@ -592,26 +595,14 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     LOG_INF("Autocorrect: Key event - keycode=0x%04X, enabled=%s", ev->keycode, autocorrect_is_enabled() ? "true" : "false");
 #endif
 
-    // Ignore all events while suppressed (e.g., during diagnostics typing)
-    if (autocorrect_is_suppressed()) {
-        return ZMK_EV_EVENT_BUBBLE;
-    }
-
-    event_count++;
-    if (!autocorrect_is_enabled()) {
-        return ZMK_EV_EVENT_BUBBLE;
-    }
-
-    if (!process_autocorrect_user(ev)) {
-        return ZMK_EV_EVENT_BUBBLE;
-    }
-
     // Require keyboard usage page (0x07)
     if (ev->usage_page != HID_USAGE_KEY) {
         // Reset on non-keyboard events
-        typo_buffer_size = 1;
-        typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
-        atomic_inc(&autocorrect_seq);
+        if (!autocorrect_is_suppressed()) {
+            typo_buffer_size = 1;
+            typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
+            atomic_inc(&autocorrect_seq);
+        }
 #if AUTOCORRECT_DEBUG
         LOG_INF("Autocorrect: Reset buffer on non-keyboard event");
 #endif
@@ -628,6 +619,20 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
             mods_pressed &= ~(1u << bit);
         }
         // No further processing for modifiers
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+
+    // Ignore non-modifier events while suppressed (e.g., during corrections)
+    if (autocorrect_is_suppressed()) {
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+
+    event_count++;
+    if (!autocorrect_is_enabled()) {
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+
+    if (!process_autocorrect_user(ev)) {
         return ZMK_EV_EVENT_BUBBLE;
     }
 
@@ -783,7 +788,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     // Freeze buffer and increment sequence before scheduling
     typo_buffer[0] = HID_USAGE_KEY_KEYBOARD_SPACEBAR;
     typo_buffer_size = 1;
-    atomic_inc(&autocorrect_seq);
+    atomic_val_t seq = atomic_inc(&autocorrect_seq) + 1;
     // Schedule with backspaces clamped to the actual typo length
     uint8_t eff_backspaces = backspaces > typo_len ? typo_len : backspaces;
     correction_work.backspaces = eff_backspaces;
@@ -797,7 +802,7 @@ static int autocorrect_event_listener(const zmk_event_t *eh) {
     correction_work.sub_state = AUTOCORRECT_SUB_STATE_KEY_PRESS;
     correction_work.index = 0;
 
-    atomic_set(&correction_work.seq, atomic_get(&autocorrect_seq));
+    atomic_set(&correction_work.seq, seq);
     (void)k_work_schedule(&correction_work.work, K_MSEC(selected_work_delay_ms()));
 #if AUTOCORRECT_DEBUG
         {
